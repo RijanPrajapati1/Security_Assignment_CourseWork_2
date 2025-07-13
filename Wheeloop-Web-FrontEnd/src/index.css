@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Force Date Input Icons to be Black */
+input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    /* Inverts the color (makes it black) */
+}
+
+/* For Firefox */
+input[type="date"]::-moz-calendar-picker-indicator {
+    filter: invert(1);
+}
