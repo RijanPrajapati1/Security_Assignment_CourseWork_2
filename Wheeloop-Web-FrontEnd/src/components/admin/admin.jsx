@@ -22,7 +22,7 @@ const AdminPanel = () => {
 
     // Handle moving to the homepage
     const handleNavigateToHomepage = () => {
-        // Navigate to the homepage ("/" will go to the home route)
+
         navigate("/");  // Redirect to homepage
     };
 
