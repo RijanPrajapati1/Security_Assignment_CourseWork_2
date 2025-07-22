@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { FaCogs, FaRoad, FaUser } from "react-icons/fa";
 
 import { useNavigate } from "react-router-dom";
@@ -18,7 +18,7 @@ const CarCard = ({ car, onCardClick }) => (
                 src={car.image}
                 alt={car.name}
                 className="w-full h-48 object-contain rounded-xl"
-                onError={(e) => { e.target.src = "/placeholder-image.jpg"; }} // Fallback image
+                onError={(e) => { e.target.src = "/placeholder-image.jpg"; }}
             />
         </div>
         <h2 className="text-xl font-semibold text-gray-800 mt-4 truncate">{car.name}</h2>
