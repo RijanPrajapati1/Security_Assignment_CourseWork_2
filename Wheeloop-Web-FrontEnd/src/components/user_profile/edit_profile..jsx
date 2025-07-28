@@ -1,11 +1,9 @@
-// src/components/user_profile/EditProfileView.jsx
-
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import axiosInstance from "../../utils/axios";
 import Navbar from "../Navbar/navbar";
+import axiosInstance from "../utils/axios";
 
 function EditProfileView() {
     const navigate = useNavigate();
