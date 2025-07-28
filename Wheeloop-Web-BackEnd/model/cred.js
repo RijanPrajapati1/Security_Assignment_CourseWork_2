@@ -1,19 +1,34 @@
+// src/model/cred.js
+
 const mongoose = require("mongoose");
+const bcrypt = require('bcryptjs');
 
 const credSchema = new mongoose.Schema({
     email: {
         type: String,
-        required: true,
-        unique: true
+        required: [true, 'Email is required'],
+        unique: true,
+        lowercase: true,
+        trim: true,
+        match: [/.+@.+\..+/, 'Please enter a valid email address']
     },
     password: {
         type: String,
-        required: true
+        // *** CHANGE THIS LINE ***
+        required: false, // <--- Make it false initially
+        minlength: [12, 'Password must be at least 12 characters long'],
+        maxlength: [64, 'Password cannot exceed 64 characters'],
+        select: false
+    },
+    tempPassword: {
+        type: String,
+        select: false
     },
     role: {
         type: String,
         enum: ["admin", "customer"],
-        required: true
+        required: true,
+        default: 'customer'
     },
     full_name: {
         type: String,
@@ -40,13 +55,21 @@ const credSchema = new mongoose.Schema({
         type: Date,
         default: null
     },
-    // --- UPDATED: isVerified remains, but will be set true upon creation in verifyEmail ---
     isVerified: {
         type: Boolean,
-        default: true // Default to true now, as user is only created AFTER verification
-    }
-    // --- END UPDATED ---
-});
+        default: false
+    },
+    mfaEnabled: {
+        type: Boolean,
+        default: false
+    },
+    mfaOtp: String,
+    mfaOtpExpires: Date
+}, { timestamps: true });
+
+credSchema.methods.matchPassword = async function (enteredPassword) {
+    return await bcrypt.compare(enteredPassword, this.password);
+};
 
 const Cred = mongoose.model("Cred", credSchema);
 

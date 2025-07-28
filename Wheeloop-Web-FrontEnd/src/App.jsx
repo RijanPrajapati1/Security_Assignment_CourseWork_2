@@ -11,6 +11,7 @@ import NotificationPanel from "./components/notification/notification";
 import FetchPayment from "./components/payment/fetchingPayment";
 import Payment from "./components/payment/payment";
 import EditProfileView from "./components/user_profile/edit_profile.";
+import EmailVerifiedPage from "./components/user_profile/email_verified_page";
 import UserProfile from "./components/user_profile/user_profile";
 import VerifyEmailPage from "./components/user_profile/verify_email_page";
 
@@ -33,6 +34,7 @@ const App = () => {
           <Route path="/fetchpayment" element={<FetchPayment />} />
           <Route path="/notification" element={<NotificationPanel />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/email-verified" element={<EmailVerifiedPage />} />
         </Routes>
       </Router>
     </QueryClientProvider>

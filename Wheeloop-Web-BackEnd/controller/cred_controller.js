@@ -1,221 +1,368 @@
+// src/controller/cred_controller.js
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const mongoose = require('mongoose');
 const Cred = require("../model/cred");
-
-// Import the new password validation function
+const crypto = require('crypto');
 const passwordPolicy = require('../validation/password_validation');
 
-// --- NEW: Security Constants ---
-const SECRET_KEY = "8261ba19898d0dcdfe6c0c411df74b587b2e54538f5f451633b71e39f957cf01";
-const ObjectId = mongoose.Types.ObjectId;
+// Environment Variables (RECOMMENDED: Move these to .env file and use `process.env.VARIABLE_NAME`)
+const SECRET_KEY = process.env.JWT_SECRET || "8261ba19898d0dcdfe6c0c411df74b587b2e54538f5f451633b71e39f957cf01";
+const EMAIL_USER = process.env.EMAIL_USER || "rijanpraz@gmail.com";
+const EMAIL_PASS = process.env.EMAIL_PASS || "hnbyxbgpqqtrwkci"; // Your Gmail App Password
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 // Brute-force prevention settings
 const MAX_FAILED_ATTEMPTS = 3;
 const LOCKOUT_TIME_MINUTES = 5;
-// --- END NEW ---
+const OTP_EXPIRY_MINUTES = 1;
 
-// Register Controller - UPDATED
-// Register Controller - UPDATED for Email Verification
-// Register Controller - REVISED for pre-registration email verification
-const register = async (req, res) => {
-    console.log("Register request received (pre-verification)", req.body);
-    const { email, password, full_name, address, phone_number } = req.body;
+// Nodemailer transporter
+const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false, // Use 'true' if connecting on 465, 'false' if on 587 with STARTTLS
+    auth: {
+        user: EMAIL_USER,
+        pass: EMAIL_PASS,
+    },
+});
 
-    // Password Policy Check (as before)
-    const validationResult = passwordPolicy(password);
-    if (!validationResult.valid) {
-        console.log("Registration failed: Password does not meet policy", email);
-        return res.status(400).send(validationResult.message);
-    }
+// Helper function to generate JWT token for authentication
+// mfa_verified will reflect if the initial MFA step was completed.
+const generateAuthToken = (id, role, full_name, mfa_verified = false) => {
+    return jwt.sign({ id, role, full_name, mfa_verified }, SECRET_KEY, { expiresIn: '24h' }); // Token valid for 24 hours
+};
 
-    // IMPORTANT: Check if email already exists BEFORE sending verification email
-    // This prevents sending emails to already registered users
-    const existingCred = await Cred.findOne({ email });
-    if (existingCred) {
-        console.log("Registration failed: Email already registered", email);
-        return res.status(400).send("Email already registered. Please login.");
-    }
-
-    // Hash the password *now* to include in the JWT payload
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // --- NEW: Create a JWT containing all user data for later creation ---
-    // This JWT payload will contain all necessary data to create the user after verification
-    const userDataForVerification = {
-        email,
-        password: hashedPassword, // Store hashed password
-        full_name,
-        address,
-        phone_number,
-        role: "customer", // Default role
-        // No isVerified: true here, it's implied upon successful processing of this token
-    };
-
-    // Sign the JWT with user data. Expire in 1 minute.
-    const verificationToken = jwt.sign(userDataForVerification, SECRET_KEY, { expiresIn: '1m' });
-    // --- END NEW ---
-
-    try {
-        const transporter = nodemailer.createTransport({
-            host: "smtp.gmail.com",
-            port: 587,
-            secure: false,
-            auth: {
-                user: "rijanpraz@gmail.com",
-                pass: "hnbyxbgpqqtrwkci"
-            }
-        });
-
-        // IMPORTANT: Replace 'http://localhost:5173' with your actual frontend URL
-        const verificationLink = `http://localhost:5173/verify-email?token=${verificationToken}`;
-
-        const info = await transporter.sendMail({
-            from: "rijanpraz@gmail.com",
-            to: email, // Send to the provided email
-            subject: "Verify Your Email Address - Wheeloop Car Rental",
-            html: `
-                <h1>Welcome to Wheeloop, ${full_name}!</h1>
-                <p>Thank you for your interest in registering. Please click the link below to verify your email address and complete your registration:</p>
-                <p><a href="${verificationLink}">Verify Email Address</a></p>
-                <p>This link is valid for <strong>1 minute</strong>.</p>
-                <p>If you did not attempt to register for this account, please ignore this email.</p>
-            `
-        });
-
-        console.log("Verification email sent successfully to", email);
-        // Respond to frontend, indicating email sent for verification
-        res.status(200).send({ message: "Registration initiated! Please check your email to verify your account within 1 minute. Your account will be created upon verification." });
-
-    } catch (e) {
-        console.error("Error during pre-registration email sending", e);
-        res.status(500).json(e);
-    }
+// Helper function to generate 6-digit OTP
+const generateOtp = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
 
-// Verify Email Controller - UPDATED
-// Verify Email Controller - REVISED (Now creates the user)
-const verifyEmail = async (req, res) => {
-    console.log("Email verification request received", req.query);
-    const { token } = req.query;
+// --- REGISTER CONTROLLER ---
+const register = async (req, res) => {
+    console.log("Register request received", req.body);
+    const { email, password, full_name, address, phone_number } = req.body;
+
+    let newCred = null;
 
     try {
-        // Verify the JWT token. This will throw an error if expired or invalid.
-        const decoded = jwt.verify(token, SECRET_KEY);
-        console.log("Decoded token for verification", decoded);
+        const validationResult = passwordPolicy(password);
+        if (!validationResult.valid) {
+            console.log("Registration failed: Password does not meet policy", email);
+            return res.status(400).send(validationResult.message);
+        }
 
-        // Extract user data from the decoded token
-        const { email, password, full_name, address, phone_number, role } = decoded;
-
-        // --- NEW: Check if the user already exists (e.g., if they refreshed the link or tried to verify twice) ---
         const existingCred = await Cred.findOne({ email });
         if (existingCred) {
             if (existingCred.isVerified) {
-                console.log("User already verified:", email);
-                return res.status(200).send("Email already verified. You can now log in!");
+                console.log("Registration failed: Email already registered and verified", email);
+                return res.status(400).send("Email already registered and verified. Please login.");
             } else {
-                // This case should ideally not happen with the new flow, but good to handle
-                console.log("User exists but not verified (unexpected state, perhaps old flow or manual manipulation):", email);
-                // Option 1: Update the existing unverified user (if they somehow exist)
-                // existingCred.isVerified = true;
-                // await existingCred.save();
-                // return res.status(200).send("Email verified successfully. You can now log in!");
-                // Option 2: Treat as an error if user exists and is not verified (forces re-registration via email)
-                return res.status(400).send("A user with this email already exists but is not verified. Please try registering again to get a new link.");
+                // If exists but not verified, it's a previous incomplete registration.
+                // Delete the old unverified record to allow a fresh attempt.
+                console.log("Existing unverified user found. Deleting and re-registering.", email);
+                await Cred.deleteOne({ email });
             }
         }
 
-        // --- IMPORTANT: ONLY CREATE THE USER NOW, after successful token verification ---
-        const newUser = new Cred({
+        const otp = generateOtp();
+        const otpExpires = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000); // OTP valid for 1 minute
+
+        // Create a new Cred record.
+        newCred = new Cred({
             email,
-            password, // Password is already hashed from the register function
-            role,
+            tempPassword: password, // Store unhashed password temporarily
             full_name,
             address,
             phone_number,
-            isVerified: true // Mark as true since verification is successful
+            role: "customer", // Default role
+            mfaOtp: otp,
+            mfaOtpExpires: otpExpires,
+            isVerified: false, // Not verified until OTP is entered
+            mfaEnabled: false // Initially false. Set to true after successful *registration* OTP verification.
+            // This flag will now mean "initial setup with OTP is complete".
         });
 
-        await newUser.save();
-        console.log("New user successfully created and verified:", email);
+        await newCred.save(); // Save the temporary user record
+        console.log("Temporary user record created for OTP verification:", email);
 
-        res.status(200).send("Email verified successfully and account created! You can now log in.");
-        // You might want to redirect the user to a success page or login page on the frontend here
+        // Send OTP email
+        const mailOptions = {
+            from: EMAIL_USER,
+            to: email,
+            subject: 'Your Wheeloop Email Verification Code',
+            html: `
+                <p>Hello ${full_name},</p>
+                <p>Thank you for registering! Your One-Time Password (OTP) to verify your email is: <strong>${otp}</strong></p>
+                <p>This code is valid for ${OTP_EXPIRY_MINUTES} minute. Do not share this code with anyone.</p>
+                <p>If you did not attempt to register, please ignore this email.</p>
+                <p>Thank you,</p>
+                <p>The Wheeloop Team</p>
+            `,
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log("Registration OTP sent successfully to", email);
+
+        // Send 202 Accepted, indicating OTP verification is pending
+        res.status(202).json({
+            message: 'Registration initiated. Please verify with OTP.',
+            userId: newCred._id.toString(), // Send this back for the OTP verification step
+            email: newCred.email // For frontend display
+        });
+
     } catch (e) {
-        console.error("Email verification error:", e);
-        if (e.name === 'TokenExpiredError') {
-            return res.status(400).send("Verification link has expired. Please register again to receive a new link.");
+        console.error("Error during registration (OTP sending/user creation):", e);
+        // If an error occurs after newCred was attempted to be created, delete the partial record
+        if (newCred && newCred._id) {
+            console.log("Attempting to delete partially created user record due to error:", newCred.email);
+            await Cred.deleteOne({ _id: newCred._id });
         }
-        // This could be JsonWebTokenError (invalid signature) or other errors
-        res.status(400).send("Invalid or corrupted verification link. Please try registering again.");
+        res.status(500).json({ error: e.message || 'Server error during registration.' });
     }
 };
 
-// Login Controller - UPDATED to check verification status
+// --- VERIFY REGISTRATION OTP ENDPOINT (initial signup verification) ---
+const verifyRegistrationOtp = async (req, res) => {
+    const { userId, otp } = req.body;
+
+    try {
+        // Find the user by ID and explicitly select tempPassword to complete the registration
+        const cred = await Cred.findById(userId).select('+tempPassword');
+
+        if (!cred) {
+            console.log("Registration OTP verification failed: User not found for ID", userId);
+            return res.status(404).send('User not found or registration session expired. Please re-register.');
+        }
+
+        // Validate OTP: existence, match, and expiry
+        if (!cred.mfaOtp || !cred.mfaOtpExpires || cred.mfaOtp !== otp || cred.mfaOtpExpires < new Date()) {
+            console.log("Registration OTP verification failed: Invalid or expired OTP for user", cred.email);
+            // If OTP is incorrect/expired during registration, delete the unverified temporary record
+            await Cred.deleteOne({ _id: userId });
+            return res.status(401).send('Invalid or expired OTP. Please re-register.');
+        }
+
+        // --- OTP IS VALID, COMPLETE REGISTRATION ---
+
+        // 1. Re-check password policy (though already checked at register, good for integrity)
+        const validationResult = passwordPolicy(cred.tempPassword);
+        if (!validationResult.valid) {
+            console.log("Registration completion failed: Temporary password does not meet policy. Deleting record.", cred.email);
+            await Cred.deleteOne({ _id: userId }); // Delete if tempPassword is bad for some reason
+            return res.status(400).send('Password no longer meets policy. Please re-register.');
+        }
+
+        // 2. Hash the password from tempPassword
+        const hashedPassword = await bcrypt.hash(cred.tempPassword, 10);
+
+        // 3. Update the user record to finalize registration
+        cred.password = hashedPassword; // Set the hashed password to the actual password field
+        cred.tempPassword = undefined; // Clear temporary password
+        cred.isVerified = true;       // Mark as verified
+        cred.mfaEnabled = true;       // Set this to TRUE, indicating initial setup is complete.
+        cred.mfaOtp = undefined;      // Clear OTP
+        cred.mfaOtpExpires = undefined; // Clear OTP expiry
+
+        await cred.save();
+        console.log("User successfully registered, verified, and MFA 'one-time setup' enabled:", cred.email);
+
+        // 4. Generate and send the final authentication token, logging the user in.
+        // The token will reflect that initial MFA was verified.
+        const token = generateAuthToken(cred._id.toString(), cred.role, cred.full_name, true); // true for mfa_verified
+
+        res.status(200).json({
+            message: 'Registration successful! Your account is activated.',
+            token,
+            role: cred.role,
+            userId: cred._id.toString(),
+            full_name: cred.full_name
+        });
+
+    } catch (error) {
+        console.error('Error during registration OTP verification:', error);
+        res.status(500).send('Server error during registration verification.');
+    }
+};
+
+// --- LOGIN CONTROLLER (MODIFIED FOR "MFA ONE-TIME ONLY") ---
 const login = async (req, res) => {
     console.log("Login request received", req.body);
     const { email, password } = req.body;
-    let cred = await Cred.findOne({ email });
 
-    if (!cred) {
-        console.log("Login failed: Email not found", email);
-        return res.status(403).send('Invalid email or password');
-    }
+    try {
+        const cred = await Cred.findOne({ email }).select('+password'); // Select password explicitly
 
-    // --- NEW: Check if email is verified ---
-    if (!cred.isVerified) {
-        console.log(`Login failed: Email not verified for user ${email}.`);
-        return res.status(403).send('Please verify your email address before logging in. Check your inbox for the verification link.');
-    }
-    // --- END NEW ---
-
-    // Check if the account is currently locked out (already implemented)
-    if (cred.lockout_until && cred.lockout_until > new Date()) {
-        const remainingMinutes = Math.ceil((cred.lockout_until - new Date()) / (1000 * 60));
-        console.log(`Login failed: Account is locked for user ${email}.`);
-        return res.status(403).send(`Account is locked. Please try again in ${remainingMinutes} minutes.`);
-    }
-
-    const validPassword = await bcrypt.compare(password, cred.password);
-
-    if (!validPassword) {
-        console.log("Login failed: Incorrect password", email);
-
-        // Countdown logic (already implemented)
-        cred.failed_login_attempts += 1;
-        await cred.save();
-
-        const remainingAttempts = MAX_FAILED_ATTEMPTS - cred.failed_login_attempts;
-        if (remainingAttempts > 0) {
-            return res.status(403).send(`Invalid email or password. You have ${remainingAttempts} attempts remaining.`);
-        } else {
-            cred.lockout_until = new Date(Date.now() + LOCKOUT_TIME_MINUTES * 60 * 1000);
-            console.log(`User ${email} has been locked out for ${LOCKOUT_TIME_MINUTES} minutes.`);
-            await cred.save();
-            return res.status(403).send(`Too many failed login attempts. Your account has been locked for ${LOCKOUT_TIME_MINUTES} minutes.`);
+        if (!cred) {
+            console.log("Login failed: Email not found", email);
+            return res.status(404).send('Invalid email or password');
         }
-    }
 
-    // On successful login, reset failed attempts and lockout (already implemented)
-    if (cred.failed_login_attempts > 0) {
+        if (cred.lockout_until && cred.lockout_until > new Date()) {
+            const remainingMinutes = Math.ceil((cred.lockout_until - new Date()) / (1000 * 60));
+            console.log(`Login failed: Account is locked for user ${email}.`);
+            return res.status(403).send(`Account is locked. Please try again in ${remainingMinutes} minutes.`);
+        }
+
+        // Ensure email is verified (should always be true for users registered with the new flow)
+        if (!cred.isVerified) {
+            console.log(`Login failed: Email not verified for user ${email}.`);
+            return res.status(401).send('Your account is not verified. Please complete registration.');
+        }
+
+        const validPassword = await cred.matchPassword(password);
+
+        if (!validPassword) {
+            console.log("Login failed: Incorrect password", email);
+
+            cred.failed_login_attempts = (cred.failed_login_attempts || 0) + 1;
+
+            if (cred.failed_login_attempts >= MAX_FAILED_ATTEMPTS) {
+                cred.lockout_until = new Date(Date.now() + LOCKOUT_TIME_MINUTES * 60 * 1000);
+                console.log(`User ${email} has been locked out for ${LOCKOUT_TIME_MINUTES} minutes.`);
+                await cred.save();
+                return res.status(401).send(`Too many failed login attempts. Your account has been locked for ${LOCKOUT_TIME_MINUTES} minutes.`);
+            } else {
+                await cred.save();
+                const remainingAttempts = MAX_FAILED_ATTEMPTS - cred.failed_login_attempts;
+                return res.status(401).send(`Invalid email or password. You have ${remainingAttempts} attempts remaining.`);
+            }
+        }
+
+        // On successful password validation, reset failed attempts and lockout
+        if (cred.failed_login_attempts > 0 || cred.lockout_until) {
+            cred.failed_login_attempts = 0;
+            cred.lockout_until = null;
+            await cred.save();
+        }
+
+        // --- CORE CHANGE FOR "MFA ONE-TIME ONLY" ---
+        // If cred.mfaEnabled is TRUE, it means the initial OTP verification for this account
+        // has already been done. We now proceed directly to issuing the login token.
+        // We DO NOT send an MFA OTP again for login.
+        console.log("Login successful. MFA 'one-time setup' status is:", cred.mfaEnabled, "for user:", email);
+        const token = generateAuthToken(cred._id.toString(), cred.role, cred.full_name, cred.mfaEnabled); // mfa_verified reflects initial setup status
+
+        res.status(200).json({
+            token,
+            role: cred.role,
+            userId: cred._id.toString(),
+            full_name: cred.full_name
+        });
+
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).send('Server error during login.');
+    }
+};
+
+// --- VERIFY MFA OTP ENDPOINT (This endpoint will now effectively be dormant for *login* purposes) ---
+// Its only potential use now would be if you later introduce a feature for users to *toggle* MFA on/off
+// for additional security, and turning it on required a new OTP verification.
+// For the "MFA one-time ever" login flow, the `login` function will no longer redirect here.
+const verifyMfaOtp = async (req, res) => {
+    // This logic remains the same, but the `login` route will no longer route to it.
+    // It's kept here in case you want to reuse it for a "toggle MFA" feature later.
+    const { userId, otp } = req.body;
+
+    try {
+        const cred = await Cred.findById(userId);
+
+        if (!cred) {
+            return res.status(404).send('User not found.');
+        }
+
+        // We only proceed if MFA is enabled AND there's an active OTP.
+        // In the "one-time ever" model, this part would typically only be for enabling/disabling MFA,
+        // not for a standard login flow.
+        if (!cred.mfaEnabled || !cred.mfaOtp || !cred.mfaOtpExpires || cred.mfaOtp !== otp || cred.mfaOtpExpires < new Date()) {
+            // Handle incorrect/expired OTP during a "toggle MFA" attempt
+            cred.mfaOtp = undefined;
+            cred.mfaOtpExpires = undefined;
+            // Optionally, add brute-force for MFA toggle
+            // cred.failed_login_attempts = (cred.failed_login_attempts || 0) + 1;
+            await cred.save();
+            return res.status(401).send('Invalid or expired One-Time Password or MFA not initiated.');
+        }
+
+        // OTP is valid, clear it from DB
+        cred.mfaOtp = undefined;
+        cred.mfaOtpExpires = undefined;
+        // Reset login attempts if this was somehow tied to login attempts
         cred.failed_login_attempts = 0;
         cred.lockout_until = null;
         await cred.save();
+
+        // Generate a token reflecting MFA completion (if this was a manual MFA enablement)
+        const token = generateAuthToken(cred._id.toString(), cred.role, cred.full_name, true);
+        console.log(`MFA successful for user ${cred.email} (if this was an explicit MFA toggle/verification).`);
+
+        res.status(200).json({
+            message: 'MFA successful, operation complete.',
+            token,
+            role: cred.role,
+            userId: cred._id.toString(),
+            full_name: cred.full_name
+        });
+
+    } catch (error) {
+        console.error('Error verifying MFA OTP:', error);
+        res.status(500).send('Server error verifying MFA OTP.');
     }
-
-    const token = jwt.sign({ email: cred.email, role: cred.role }, SECRET_KEY, { expiresIn: '24h' });
-    console.log("Login successful", email);
-
-    res.json({
-        token,
-        role: cred.role,
-        userId: cred._id.toString()
-    });
 };
 
-// Other CRUD operations - UNCHANGED
+// --- Resend Login MFA OTP (This endpoint will also effectively be dormant for *login* purposes) ---
+// Similar to `verifyMfaOtp`, this would only be used if you have a separate feature
+// where users can explicitly request OTPs (e.g., for enabling MFA).
+const resendMfaOtp = async (req, res) => {
+    const { userId } = req.body;
+
+    try {
+        const cred = await Cred.findById(userId);
+
+        if (!cred) {
+            return res.status(404).send('User not found.');
+        }
+        // Only allow resend if MFA is truly enabled AND an OTP was previously sent (e.g., in a toggle flow)
+        if (!cred.mfaEnabled || !cred.mfaOtp) { // Check for existing OTP to prevent spam
+            return res.status(400).send('MFA not initiated or already verified for this account.');
+        }
+
+        const otp = generateOtp();
+        const otpExpires = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+        cred.mfaOtp = otp;
+        cred.mfaOtpExpires = otpExpires;
+        await cred.save();
+
+        const mailOptions = {
+            from: EMAIL_USER,
+            to: cred.email,
+            subject: 'Your Wheeloop One-Time Code',
+            html: `
+                <p>Hello ${cred.full_name},</p>
+                <p>Your new One-Time Password (OTP) is: <strong>${otp}</strong></p>
+                <p>This code is valid for ${OTP_EXPIRY_MINUTES} minute. Do not share this code with anyone.</p>
+                <p>If you did not request this, please ignore this email.</p>
+                <p>Thank you,</p>
+                <p>The Wheeloop Team</p>
+            `,
+        };
+        await transporter.sendMail(mailOptions);
+        res.status(200).send('New OTP sent to your registered email.');
+
+    } catch (error) {
+        console.error('Error resending OTP:', error);
+        res.status(500).send('Error resending OTP.');
+    }
+};
+
+
+// --- CRUD Operations (No changes here) ---
 const findAll = async (req, res) => {
     try {
         const users = await Cred.find();
@@ -229,15 +376,12 @@ const findAll = async (req, res) => {
 
 const findById = async (req, res) => {
     try {
-        const userId = new ObjectId(req.params.id);
-        const user = await Cred.findById(userId);
-
+        const user = await Cred.findById(req.params.id);
         if (!user) {
             console.log("User not found", req.params.id);
             return res.status(404).send("User not found");
         }
-
-        console.log("User retrieved", user);
+        console.log("User retrieved", user.email);
         res.status(200).json(user);
     } catch (e) {
         console.error("Error fetching user", e);
@@ -247,15 +391,30 @@ const findById = async (req, res) => {
 
 const update = async (req, res) => {
     try {
-        const updatedUser = await Cred.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const { id } = req.params;
+        const updates = req.body;
+
+        if (updates.password) {
+            const validationResult = passwordPolicy(updates.password);
+            if (!validationResult.valid) {
+                return res.status(400).send(validationResult.message);
+            }
+            updates.password = await bcrypt.hash(updates.password, 10);
+        }
+
+        const updatedUser = await Cred.findByIdAndUpdate(id, updates, { new: true });
         if (!updatedUser) {
-            console.log("User not found for update", req.params.id);
+            console.log("User not found for update", id);
             return res.status(404).send("User not found");
         }
-        console.log("User updated successfully", updatedUser);
+        updatedUser.password = undefined;
+        console.log("User updated successfully", updatedUser.email);
         res.status(202).json(updatedUser);
     } catch (e) {
         console.error("Error updating user", e);
+        if (e.name === 'ValidationError') {
+            return res.status(400).send(e.message);
+        }
         res.status(500).json(e);
     }
 };
@@ -275,4 +434,14 @@ const deleteById = async (req, res) => {
     }
 };
 
-module.exports = { login, register, verifyEmail, findAll, findById, update, deleteById };
+module.exports = {
+    login,
+    register,
+    verifyRegistrationOtp,
+    verifyMfaOtp, // Kept for potential future "toggle MFA" feature
+    resendMfaOtp, // Kept for potential future "toggle MFA" feature
+    findAll,
+    findById,
+    update,
+    deleteById
+};

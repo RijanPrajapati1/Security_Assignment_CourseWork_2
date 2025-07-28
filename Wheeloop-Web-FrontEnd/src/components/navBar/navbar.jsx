@@ -3,7 +3,36 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import axiosInstance from "../utils/axios";
+import axiosInstance from "../utils/axios"; // Assuming axiosInstance is configured for your backend API base URL
+
+// FIX: Make sure your baseURL in src/utils/axios.js is just 'http://localhost:3001'
+// and NOT 'http://localhost:3001/api' if your routes start with /api/cred/...
+
+const validatePasswordPolicy = (password) => {
+  const minLength = 12;
+  const maxLength = 64;
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+  if (password.length < minLength || password.length > maxLength) {
+    return { valid: false, message: `Password must be between ${minLength} and ${maxLength} characters.` };
+  }
+  if (!hasUpperCase) {
+    return { valid: false, message: 'Password must contain at least one uppercase letter.' };
+  }
+  if (!hasLowerCase) {
+    return { valid: false, message: 'Password must contain at least one lowercase letter.' };
+  }
+  if (!hasNumber) {
+    return { valid: false, message: 'Password must contain at least one number.' };
+  }
+  if (!hasSpecialChar) {
+    return { valid: false, message: 'Password must contain at least one special character.' };
+  }
+  return { valid: true, message: 'Password meets all requirements.' };
+};
 
 const Navbar = () => {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -11,50 +40,72 @@ const Navbar = () => {
   const [loggedIn, setLoggedIn] = useState(false);
   const navigate = useNavigate();
 
-  // Check if the user is logged in on page load
+  // --- NEW/MODIFIED MFA/OTP STATE ---
+  const [mfaRequired, setMfaRequired] = useState(false); // For login flow
+  const [registrationOtpRequired, setRegistrationOtpRequired] = useState(false); // For signup flow
+  const [currentOtpUserId, setCurrentOtpUserId] = useState(null); // userId (cred._id) for current OTP verification (either reg or login)
+  const [currentOtpEmail, setCurrentOtpEmail] = useState(''); // Email for current OTP display
+
+  // States to hold registration data until OTP is verified
+  const [pendingRegistrationData, setPendingRegistrationData] = useState(null);
+  // --- END NEW/MODIFIED MFA/OTP STATE ---
+
   useEffect(() => {
     const token = localStorage.getItem("authToken");
-    const userRole = localStorage.getItem("userRole");
-
-    console.log("Token on Mount:", token);
-
     if (token) {
       setLoggedIn(true);
-      if (userRole === "admin") {
+      const userRole = localStorage.getItem("userRole");
+      if (userRole === "admin" && window.location.pathname !== "/admin") {
         navigate("/admin");
-      } else if (userRole === "customer") {
-        // No immediate navigate for customer on initial load unless a specific home page
+      } else if (userRole === "customer" && window.location.pathname === "/admin") {
+        navigate("/");
       }
     }
   }, [navigate]);
 
   const toggleLoginModal = () => {
     setIsLoginModalOpen(!isLoginModalOpen);
-    setIsSignupModalOpen(false); // Close signup modal
+    setIsSignupModalOpen(false);
+    setMfaRequired(false); // Reset login MFA state
+    setCurrentOtpUserId(null);
+    setCurrentOtpEmail('');
   };
 
   const toggleSignupModal = () => {
     setIsSignupModalOpen(!isSignupModalOpen);
-    setIsLoginModalOpen(false); // Close login modal
+    setIsLoginModalOpen(false);
+    setRegistrationOtpRequired(false); // Reset registration OTP state
+    setCurrentOtpUserId(null);
+    setCurrentOtpEmail('');
+    setPendingRegistrationData(null); // Clear pending data
   };
 
+  // --- Handle Login Mutation (Modified for MFA) ---
   const loginMutation = useMutation({
     mutationFn: async (credentials) => {
       const response = await axiosInstance.post("/cred/login", credentials);
-      console.log("Stored Token:", localStorage.getItem("authToken"));
       return response.data;
     },
     onSuccess: (data) => {
-      console.log("Login Success:", data);
-      localStorage.setItem("authToken", data.token);
-      localStorage.setItem("userRole", data.role);
-      localStorage.setItem("userId", data.userId)
-      setLoggedIn(true);
-      setIsLoginModalOpen(false);
-      if (data.role === "admin") {
-        navigate("/admin");
+      if (data.message === 'MFA required. Please verify with OTP.') {
+        setMfaRequired(true); // Flag for login MFA
+        setCurrentOtpUserId(data.userId); // Store userId for OTP verification
+        setCurrentOtpEmail(data.email); // Store email for display
+        toast.info(`MFA required. An OTP has been sent to your registered email: ${data.email}.`);
       } else {
-        navigate("/");
+        console.log("Login Success (No MFA):", data);
+        localStorage.setItem("authToken", data.token);
+        localStorage.setItem("userRole", data.role);
+        localStorage.setItem("userId", data.userId);
+        localStorage.setItem("fullName", data.full_name);
+        setLoggedIn(true);
+        setIsLoginModalOpen(false);
+        if (data.role === "admin") {
+          navigate("/admin");
+        } else {
+          navigate("/");
+        }
+        toast.success('Login successful!');
       }
     },
     onError: (error) => {
@@ -67,6 +118,62 @@ const Navbar = () => {
     },
   });
 
+  // --- NEW: Verify Login MFA OTP Mutation ---
+  const verifyMfaOtpMutation = useMutation({
+    mutationFn: async ({ userId, otp }) => {
+      const response = await axiosInstance.post("/cred/verify-mfa-otp", { userId, otp });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      console.log("Verify Login OTP Success:", data);
+      localStorage.setItem("authToken", data.token);
+      localStorage.setItem("userRole", data.role);
+      localStorage.setItem("userId", data.userId);
+      localStorage.setItem("fullName", data.full_name);
+      setLoggedIn(true);
+      setIsLoginModalOpen(false);
+      setMfaRequired(false); // Reset MFA state
+      setCurrentOtpUserId(null);
+      setCurrentOtpEmail('');
+
+      if (data.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/");
+      }
+      toast.success('MFA successful, login complete!');
+    },
+    onError: (error) => {
+      console.log("Verify Login OTP Error:", error);
+      if (error.response && error.response.data) {
+        toast.error(error.response.data);
+      } else {
+        toast.error("OTP verification failed. Please try again.");
+      }
+    }
+  });
+
+  // --- NEW: Resend Login MFA OTP Mutation ---
+  const resendMfaOtpMutation = useMutation({
+    mutationFn: async ({ userId }) => {
+      const response = await axiosInstance.post("/cred/resend-mfa-otp", { userId });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      console.log("Resend Login OTP Success:", data);
+      toast.success(data); // "New MFA OTP sent to your registered email."
+    },
+    onError: (error) => {
+      console.log("Resend Login OTP Error:", error);
+      if (error.response && error.response.data) {
+        toast.error(error.response.data);
+      } else {
+        toast.error("Failed to resend OTP. Please try again.");
+      }
+    }
+  });
+
+  // --- Handle Signup (Register) Mutation ---
   const signupMutation = useMutation({
     mutationFn: (userData) => {
       console.log("Sending signup request", userData);
@@ -75,13 +182,18 @@ const Navbar = () => {
     onMutate: () => {
       toast.info("Processing your signup...", {
         toastId: "signupProcessing",
+        autoClose: false
       });
     },
     onSuccess: (response) => {
       toast.dismiss("signupProcessing");
-      console.log("Signup request successful (pending verification):", response.data);
-      toast.success(response.data.message || "Registration successful! Please check your email to verify your account.");
-      setIsSignupModalOpen(false);
+      console.log("Signup request successful (pending OTP verification):", response.data);
+      toast.success(response.data.message || "Registration initiated! Please verify with OTP sent to your email.");
+
+      setRegistrationOtpRequired(true); // Flag to show OTP input for registration
+      setCurrentOtpUserId(response.data.userId); // Store temporary userId
+      setCurrentOtpEmail(response.data.email); // Store email for display
+      setPendingRegistrationData(response.data); // Store any other data needed for next step
     },
     onError: (error) => {
       toast.dismiss("signupProcessing");
@@ -94,6 +206,51 @@ const Navbar = () => {
     },
   });
 
+  // --- NEW: Verify Registration OTP Mutation ---
+  const verifyRegistrationOtpMutation = useMutation({
+    mutationFn: async ({ userId, otp }) => {
+      const response = await axiosInstance.post("/cred/verify-registration-otp", { userId, otp });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      console.log("Verify Registration OTP Success:", data);
+      localStorage.setItem("authToken", data.token);
+      localStorage.setItem("userRole", data.role);
+      localStorage.setItem("userId", data.userId);
+      localStorage.setItem("fullName", data.full_name);
+      setLoggedIn(true);
+      setIsSignupModalOpen(false); // Close signup modal
+      setRegistrationOtpRequired(false); // Reset registration OTP state
+      setCurrentOtpUserId(null);
+      setCurrentOtpEmail('');
+      setPendingRegistrationData(null);
+
+      if (data.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/");
+      }
+      toast.success('Registration and MFA successful! You are now logged in.');
+    },
+    onError: (error) => {
+      console.log("Verify Registration OTP Error:", error);
+      if (error.response && error.response.data) {
+        toast.error(error.response.data);
+        if (error.response.data === 'Invalid or expired OTP. Please re-register.') {
+          // Force user to restart registration process
+          setRegistrationOtpRequired(false);
+          setCurrentOtpUserId(null);
+          setCurrentOtpEmail('');
+          setPendingRegistrationData(null);
+          // Open signup modal again to allow re-registration
+          setIsSignupModalOpen(true);
+        }
+      } else {
+        toast.error("OTP verification failed. Please try again.");
+      }
+    }
+  });
+
   const handleLogin = (event) => {
     event.preventDefault();
     const email = event.target.email.value;
@@ -101,33 +258,52 @@ const Navbar = () => {
     loginMutation.mutate({ email, password });
   };
 
-  // --- REPLICATE BACKEND PASSWORD POLICY FOR CLIENT-SIDE VALIDATION ---
-  const validatePasswordPolicy = (password) => {
-    const minLength = 12;
-    const maxLength = 64;
-    const hasUpperCase = /[A-Z]/.test(password);
-    const hasLowerCase = /[a-z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
-    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+  // Handle OTP submission, now checking if it's for registration or login
+  const handleOtpSubmit = (event) => {
+    event.preventDefault();
+    const otp = event.target.otp.value;
+    if (!otp) {
+      toast.error("Please enter the OTP.");
+      return;
+    }
+    if (!currentOtpUserId) {
+      toast.error("Missing user ID for OTP verification. Please try again.");
+      return;
+    }
 
-    if (password.length < minLength || password.length > maxLength) {
-      return { valid: false, message: `Password must be between ${minLength} and ${maxLength} characters.` };
+    if (registrationOtpRequired) {
+      // It's for initial registration OTP
+      verifyRegistrationOtpMutation.mutate({ userId: currentOtpUserId, otp });
+    } else if (mfaRequired) {
+      // It's for subsequent login MFA
+      verifyMfaOtpMutation.mutate({ userId: currentOtpUserId, otp });
+    } else {
+      toast.error("Unknown OTP verification state. Please try logging in/registering again.");
+      toggleLoginModal(); // Close modal to reset
     }
-    if (!hasUpperCase) {
-      return { valid: false, message: 'Password must contain at least one uppercase letter.' };
-    }
-    if (!hasLowerCase) {
-      return { valid: false, message: 'Password must contain at least one lowercase letter.' };
-    }
-    if (!hasNumber) {
-      return { valid: false, message: 'Password must contain at least one number.' };
-    }
-    if (!hasSpecialChar) {
-      return { valid: false, message: 'Password must contain at least one special character.' };
-    }
-    return { valid: true, message: 'Password meets all requirements.' };
   };
-  // --- END PASSWORD POLICY REPLICATION ---
+
+  const handleResendOtp = () => {
+    if (!currentOtpUserId) {
+      toast.error("Cannot resend OTP. Please try again.");
+      return;
+    }
+    if (registrationOtpRequired) {
+      // For registration, resending means re-triggering the register mutation
+      // This is a design choice. Alternatively, you could have a dedicated resend_reg_otp endpoint.
+      // For simplicity and matching your "if otp not correct then again signup" logic, we'll re-prompt for signup.
+      toast.info("For registration, if OTP expired, please re-register to get a new one.");
+      // You might want to automatically close the OTP modal and re-open signup here
+      setRegistrationOtpRequired(false);
+      setCurrentOtpUserId(null);
+      setCurrentOtpEmail('');
+      setPendingRegistrationData(null);
+      setIsSignupModalOpen(true); // Re-open signup modal
+    } else if (mfaRequired) {
+      // For login MFA, use the dedicated resend endpoint
+      resendMfaOtpMutation.mutate({ userId: currentOtpUserId });
+    }
+  };
 
   const handleSignup = (event) => {
     event.preventDefault();
@@ -141,54 +317,26 @@ const Navbar = () => {
 
     let hasError = false;
 
-    // --- Frontend Validations ---
-    if (!fullName) {
-      toast.error("Full Name is required!");
-      hasError = true;
-    }
-    if (!email) {
-      toast.error("Email is required!");
-      hasError = true;
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { // Basic email regex
-      toast.error("Please enter a valid email format!");
-      hasError = true;
-    }
-    if (!address) {
-      toast.error("Address is required!");
-      hasError = true;
-    }
-    if (!phoneNumber) {
-      toast.error("Phone Number is required!");
-      hasError = true;
-    } else if (!/^\d{10}$/.test(phoneNumber)) { // Assumes 10-digit number for simplicity
-      toast.error("Phone Number must be 10 digits!");
-      hasError = true;
-    }
+    if (!fullName) { toast.error("Full Name is required!"); hasError = true; }
+    if (!email) { toast.error("Email is required!"); hasError = true; }
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast.error("Please enter a valid email format!"); hasError = true; }
+    if (!address) { toast.error("Address is required!"); hasError = true; }
+    if (!phoneNumber) { toast.error("Phone Number is required!"); hasError = true; }
+    else if (!/^\d{10}$/.test(phoneNumber)) { toast.error("Phone Number must be 10 digits!"); hasError = true; }
 
-    // Password policy validation using the replicated function
     if (!password) {
-      toast.error("Password is required!");
-      hasError = true;
+      toast.error("Password is required!"); hasError = true;
     } else {
       const passwordValidationResult = validatePasswordPolicy(password);
       if (!passwordValidationResult.valid) {
-        toast.error(passwordValidationResult.message);
-        hasError = true;
+        toast.error(passwordValidationResult.message); hasError = true;
       }
     }
+    if (password !== confirmPassword) { toast.error("Passwords do not match!"); hasError = true; }
 
-    if (password !== confirmPassword) {
-      toast.error("Passwords do not match!");
-      hasError = true;
-    }
-
-    if (hasError) {
-      return; // Stop the form submission if any validation failed
-    }
-    // --- End Frontend Validations ---
+    if (hasError) { return; }
 
     const role = 'customer';
-
     signupMutation.mutate({ full_name: fullName, email, address, phone_number: phoneNumber, password, role });
   };
 
@@ -196,8 +344,9 @@ const Navbar = () => {
     localStorage.removeItem("authToken");
     localStorage.removeItem("userRole");
     localStorage.removeItem("userId");
+    localStorage.removeItem("fullName");
     setLoggedIn(false);
-    window.location.href = "/";
+    navigate("/");
   };
 
   return (
@@ -210,31 +359,11 @@ const Navbar = () => {
 
       <div className="flex-1 flex justify-center">
         <ul className="menu menu-horizontal px-2 space-x-6">
-          <li>
-            <a className="text-lg font-medium text-white hover:text-primary" href="/">
-              Home
-            </a>
-          </li>
-          <li>
-            <a className="text-lg font-medium text-white hover:text-primary" href="/carlists">
-              Cars
-            </a>
-          </li>
-          <li>
-            <a className="text-lg font-medium text-white hover:text-primary" href="/Booking">
-              Booking
-            </a>
-          </li>
-          <li>
-            <a className="text-lg font-medium text-white hover:text-primary" href="/fetchpayment">
-              Payment
-            </a>
-          </li>
-          <li>
-            <a className="text-lg font-medium text-white hover:text-primary" href="/notification">
-              Notification
-            </a>
-          </li>
+          <li><a className="text-lg font-medium text-white hover:text-primary" href="/">Home</a></li>
+          <li><a className="text-lg font-medium text-white hover:text-primary" href="/carlists">Cars</a></li>
+          <li><a className="text-lg font-medium text-white hover:text-primary" href="/Booking">Booking</a></li>
+          <li><a className="text-lg font-medium text-white hover:text-primary" href="/fetchpayment">Payment</a></li>
+          <li><a className="text-lg font-medium text-white hover:text-primary" href="/notification">Notification</a></li>
         </ul>
       </div>
 
@@ -286,51 +415,99 @@ const Navbar = () => {
             >
               &times;
             </button>
-            <h2 className="text-3xl text-black font-bold text-center mb-4">Login</h2>
-            <form onSubmit={handleLogin}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-black mb-2">Email</label>
-                <input
-                  type="email"
-                  name="email"
-                  className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+            <h2 className="text-3xl text-black font-bold text-center mb-4">
+              {mfaRequired ? 'Verify Multi-Factor Authentication' : 'Login'}
+            </h2>
+            {mfaRequired ? (
+              // MFA OTP Input Form for LOGIN
+              <form onSubmit={handleOtpSubmit}>
+                <div className="mb-4 text-center text-black">
+                  <p>An OTP has been sent to your registered email: <strong>{currentOtpEmail}</strong></p>
+                  <p>Please enter the code to complete your login.</p>
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-black mb-2">One-Time Password (OTP)</label>
+                  <input
+                    type="text"
+                    name="otp"
+                    maxLength="6"
+                    className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-center tracking-widest text-lg"
+                    placeholder="******"
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full bg-primary hover:bg-primary/80 text-white py-3 rounded-lg text-lg font-semibold transition duration-300"
+                  disabled={verifyMfaOtpMutation.isPending}
+                >
+                  {verifyMfaOtpMutation.isPending ? 'Verifying...' : 'Verify OTP'}
+                </button>
+                <div className="text-center mt-4">
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    className="text-sm font-medium text-primary hover:underline"
+                    disabled={resendMfaOtpMutation.isPending}
+                  >
+                    {resendMfaOtpMutation.isPending ? 'Sending...' : 'Resend OTP'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              // Normal Login Form
+              <form onSubmit={handleLogin}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-black mb-2">Email</label>
+                  <input
+                    type="email"
+                    name="email"
+                    className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-black mb-2">Password</label>
+                  <input
+                    type="password"
+                    name="password"
+                    className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    required
+                  />
+                </div>
+                <div className="mb-4 flex justify-between items-center">
+                  <label className="flex items-center text-sm font-medium text-black">
+                    <input type="checkbox" className="mr-2" /> Remember me
+                  </label>
+                  <a href="#" className="text-sm text-primary">Forgot password?</a>
+                </div>
+                <button
+                  type="submit"
+                  className="w-full bg-primary hover:bg-primary/80 text-white py-3 rounded-lg text-lg font-semibold transition duration-300"
+                  disabled={loginMutation.isPending}
+                >
+                  {loginMutation.isPending ? 'Logging In...' : 'Login'}
+                </button>
+              </form>
+            )}
+
+            {/* Common part for Login/MFA modal - switch to signup */}
+            {!mfaRequired && (
+              <div className="text-center mt-4">
+                <span className="text-sm text-black">Don't have an account?</span>
+                <button
+                  onClick={toggleSignupModal}
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Sign Up
+                </button>
               </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-black mb-2">Password</label>
-                <input
-                  type="password"
-                  name="password"
-                  className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="mb-4 flex justify-between items-center">
-                <label className="flex items-center text-sm font-medium text-black">
-                  <input type="checkbox" className="mr-2" /> Remember me
-                </label>
-                <a href="#" className="text-sm text-primary">Forgot password?</a>
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-primary hover:bg-primary/80 text-white py-3 rounded-lg text-lg font-semibold transition duration-300"
-              >
-                Login
-              </button>
-            </form>
-            <div className="text-center mt-4">
-              <span className="text-sm text-black">Don't have an account?</span>
-              <button
-                onClick={toggleSignupModal}
-                className="text-sm font-medium text-primary hover:underline"
-              >
-                Sign Up
-              </button>
-            </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Signup Modal */}
+      {/* Signup Modal (Modified for Registration OTP) */}
       {isSignupModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
           <div className="bg-white rounded-xl shadow-lg p-8 w-full sm:w-[470px] relative">
@@ -340,72 +517,123 @@ const Navbar = () => {
             >
               &times;
             </button>
-            <h2 className="text-3xl text-black font-bold text-center mb-4">Sign Up</h2>
-            <form onSubmit={handleSignup}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-black mb-2">Full Name</label>
-                <input
-                  type="text"
-                  name="fullName"
-                  className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+            <h2 className="text-3xl text-black font-bold text-center mb-4">
+              {registrationOtpRequired ? 'Verify Your Email' : 'Sign Up'}
+            </h2>
+
+            {registrationOtpRequired ? (
+              // OTP input for Registration Verification
+              <form onSubmit={handleOtpSubmit}>
+                <div className="mb-4 text-center text-black">
+                  <p>An OTP has been sent to <strong>{currentOtpEmail}</strong> to verify your registration.</p>
+                  <p>Please enter the code to complete your signup.</p>
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-black mb-2">One-Time Password (OTP)</label>
+                  <input
+                    type="text"
+                    name="otp"
+                    maxLength="6"
+                    className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-center tracking-widest text-lg"
+                    placeholder="******"
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full bg-primary hover:bg-primary/80 text-white py-3 rounded-lg text-lg font-semibold transition duration-300"
+                  disabled={verifyRegistrationOtpMutation.isPending}
+                >
+                  {verifyRegistrationOtpMutation.isPending ? 'Verifying...' : 'Verify Email & Complete Signup'}
+                </button>
+                <div className="text-center mt-4">
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    className="text-sm font-medium text-primary hover:underline"
+                  >
+                    Resend OTP / Re-register
+                  </button>
+                </div>
+              </form>
+            ) : (
+              // Normal Signup Form
+              <form onSubmit={handleSignup}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-black mb-2">Full Name</label>
+                  <input
+                    type="text"
+                    name="fullName"
+                    className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-black mb-2">Email</label>
+                  <input
+                    type="email"
+                    name="email"
+                    className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-black mb-2">Address</label>
+                  <input
+                    type="text"
+                    name="address"
+                    className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-black mb-2">Phone Number</label>
+                  <input
+                    type="text"
+                    name="phoneNumber"
+                    className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-black mb-2">Password</label>
+                  <input
+                    type="password"
+                    name="password"
+                    className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-black mb-2">Confirm Password</label>
+                  <input
+                    type="password"
+                    name="confirmPassword"
+                    className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full bg-primary hover:bg-primary/80 text-white py-3 rounded-lg text-lg font-semibold transition duration-300"
+                  disabled={signupMutation.isPending}
+                >
+                  {signupMutation.isPending ? 'Signing Up...' : 'Sign Up'}
+                </button>
+              </form>
+            )}
+            {/* Common part for Signup modal - switch to login */}
+            {!registrationOtpRequired && (
+              <div className="text-center mt-4">
+                <span className="text-sm text-black">Already have an account?</span>
+                <button
+                  onClick={toggleLoginModal}
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Login
+                </button>
               </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-black mb-2">Email</label>
-                <input
-                  type="email"
-                  name="email"
-                  className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-black mb-2">Address</label>
-                <input
-                  type="text"
-                  name="address"
-                  className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-black mb-2">Phone Number</label>
-                <input
-                  type="text"
-                  name="phoneNumber"
-                  className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-black mb-2">Password</label>
-                <input
-                  type="password"
-                  name="password"
-                  className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-black mb-2">Confirm Password</label>
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-primary hover:bg-primary/80 text-white py-3 rounded-lg text-lg font-semibold transition duration-300"
-              >
-                Sign Up
-              </button>
-            </form>
-            <div className="text-center mt-4">
-              <span className="text-sm text-black">Already have an account?</span>
-              <button
-                onClick={toggleLoginModal}
-                className="text-sm font-medium text-primary hover:underline"
-              >
-                Login
-              </button>
-            </div>
+            )}
           </div>
         </div>
       )}
