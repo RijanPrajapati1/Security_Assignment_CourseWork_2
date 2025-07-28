@@ -12,6 +12,7 @@ import FetchPayment from "./components/payment/fetchingPayment";
 import Payment from "./components/payment/payment";
 import EditProfileView from "./components/user_profile/edit_profile.";
 import UserProfile from "./components/user_profile/user_profile";
+import VerifyEmailPage from "./components/user_profile/verify_email_page";
 
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ const App = () => {
           <Route path="/editprofile" element={<EditProfileView />} />
           <Route path="/fetchpayment" element={<FetchPayment />} />
           <Route path="/notification" element={<NotificationPanel />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
         </Routes>
       </Router>
     </QueryClientProvider>

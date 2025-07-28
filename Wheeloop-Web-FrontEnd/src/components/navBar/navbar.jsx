@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom"; // Import useNavigate for programmatic navigation
+import { useNavigate } from "react-router-dom";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import axiosInstance from "../utils/axios";
@@ -9,28 +9,24 @@ const Navbar = () => {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
-  const navigate = useNavigate(); // useNavigate for navigation
+  const navigate = useNavigate();
 
   // Check if the user is logged in on page load
   useEffect(() => {
     const token = localStorage.getItem("authToken");
     const userRole = localStorage.getItem("userRole");
-    const userId = localStorage.getItem("userId");
 
     console.log("Token on Mount:", token);
 
     if (token) {
       setLoggedIn(true);
-      // Redirect user based on their role
       if (userRole === "admin") {
-        navigate("/admin"); // Redirect to admin page if the user is an admin
-      } else if (userRole === "cusomer") { // CORRECTED: "cusomer" to "customer"
-        navigate("/"); // Redirect to home page if the user is a customer
+        navigate("/admin");
+      } else if (userRole === "customer") {
+        // No immediate navigate for customer on initial load unless a specific home page
       }
     }
   }, [navigate]);
-
-
 
   const toggleLoginModal = () => {
     setIsLoginModalOpen(!isLoginModalOpen);
@@ -42,15 +38,12 @@ const Navbar = () => {
     setIsLoginModalOpen(false); // Close login modal
   };
 
-  // Handle login mutation - UPDATED
   const loginMutation = useMutation({
     mutationFn: async (credentials) => {
       const response = await axiosInstance.post("/cred/login", credentials);
       console.log("Stored Token:", localStorage.getItem("authToken"));
-
-      return response.data; // Ensure correct response format
+      return response.data;
     },
-
     onSuccess: (data) => {
       console.log("Login Success:", data);
       localStorage.setItem("authToken", data.token);
@@ -58,17 +51,14 @@ const Navbar = () => {
       localStorage.setItem("userId", data.userId)
       setLoggedIn(true);
       setIsLoginModalOpen(false);
-
-      // Redirect user based on their role
       if (data.role === "admin") {
-        navigate("/admin"); // Admin page
+        navigate("/admin");
       } else {
-        navigate("/"); // Home page
+        navigate("/");
       }
     },
     onError: (error) => {
       console.log("Login Error:", error);
-      // UPDATED: Check for and display the specific error message from the server
       if (error.response && error.response.data) {
         toast.error(error.response.data);
       } else {
@@ -77,40 +67,25 @@ const Navbar = () => {
     },
   });
 
-  // Handle signup mutation - UPDATED
   const signupMutation = useMutation({
     mutationFn: (userData) => {
-      console.log("Sending signup request", userData); // Log request
+      console.log("Sending signup request", userData);
       return axiosInstance.post("/cred/register", userData);
     },
     onMutate: () => {
-      // Show processing toast when the mutation starts
-      toast.info("Processing your signup... Please wait.", {
-        toastId: "signupProcessing", // Assign an ID to this toast so it can be replaced later
+      toast.info("Processing your signup...", {
+        toastId: "signupProcessing",
       });
     },
-    onSuccess: (data) => {
-      console.log("Login Success:", data);
-
-      // Accessing data from `response.data` correctly
-      localStorage.setItem("authToken", data.token);
-      localStorage.setItem("userRole", data.role);
-      localStorage.setItem("userId", data.userId); // Save the userId to localStorage
-
-      setIsLoginModalOpen(false);
-      toast.success("Signup successful!");
-
-      // Redirect user based on their role
-      if (data.role === "admin") {
-        navigate("/admin");
-      } else {
-        navigate("/");
-      }
+    onSuccess: (response) => {
+      toast.dismiss("signupProcessing");
+      console.log("Signup request successful (pending verification):", response.data);
+      toast.success(response.data.message || "Registration successful! Please check your email to verify your account.");
+      setIsSignupModalOpen(false);
     },
-
     onError: (error) => {
+      toast.dismiss("signupProcessing");
       console.log("Signup Error:", error);
-      // UPDATED: Check for and display the specific error message from the server
       if (error.response && error.response.data) {
         toast.error(error.response.data);
       } else {
@@ -126,35 +101,103 @@ const Navbar = () => {
     loginMutation.mutate({ email, password });
   };
 
+  // --- REPLICATE BACKEND PASSWORD POLICY FOR CLIENT-SIDE VALIDATION ---
+  const validatePasswordPolicy = (password) => {
+    const minLength = 12;
+    const maxLength = 64;
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+    if (password.length < minLength || password.length > maxLength) {
+      return { valid: false, message: `Password must be between ${minLength} and ${maxLength} characters.` };
+    }
+    if (!hasUpperCase) {
+      return { valid: false, message: 'Password must contain at least one uppercase letter.' };
+    }
+    if (!hasLowerCase) {
+      return { valid: false, message: 'Password must contain at least one lowercase letter.' };
+    }
+    if (!hasNumber) {
+      return { valid: false, message: 'Password must contain at least one number.' };
+    }
+    if (!hasSpecialChar) {
+      return { valid: false, message: 'Password must contain at least one special character.' };
+    }
+    return { valid: true, message: 'Password meets all requirements.' };
+  };
+  // --- END PASSWORD POLICY REPLICATION ---
+
   const handleSignup = (event) => {
     event.preventDefault();
-    const fullName = event.target.fullName.value;
-    const email = event.target.email.value;
-    const address = event.target.address.value;
-    const phoneNumber = event.target.phoneNumber.value;
+
+    const fullName = event.target.fullName.value.trim();
+    const email = event.target.email.value.trim();
+    const address = event.target.address.value.trim();
+    const phoneNumber = event.target.phoneNumber.value.trim();
     const password = event.target.password.value;
     const confirmPassword = event.target.confirmPassword.value;
 
-    // You can add more validation for confirmPassword
-    if (password !== confirmPassword) {
-      toast.error("Passwords do not match!"); // Error toast for mismatched passwords
-      return;
+    let hasError = false;
+
+    // --- Frontend Validations ---
+    if (!fullName) {
+      toast.error("Full Name is required!");
+      hasError = true;
+    }
+    if (!email) {
+      toast.error("Email is required!");
+      hasError = true;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { // Basic email regex
+      toast.error("Please enter a valid email format!");
+      hasError = true;
+    }
+    if (!address) {
+      toast.error("Address is required!");
+      hasError = true;
+    }
+    if (!phoneNumber) {
+      toast.error("Phone Number is required!");
+      hasError = true;
+    } else if (!/^\d{10}$/.test(phoneNumber)) { // Assumes 10-digit number for simplicity
+      toast.error("Phone Number must be 10 digits!");
+      hasError = true;
     }
 
-    // Set the default role to 'customer'
-    const role = 'customer';  // Default role for new users
+    // Password policy validation using the replicated function
+    if (!password) {
+      toast.error("Password is required!");
+      hasError = true;
+    } else {
+      const passwordValidationResult = validatePasswordPolicy(password);
+      if (!passwordValidationResult.valid) {
+        toast.error(passwordValidationResult.message);
+        hasError = true;
+      }
+    }
 
-    // UPDATED: Remove the 'confirmPassword' field from the data sent to the backend
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match!");
+      hasError = true;
+    }
+
+    if (hasError) {
+      return; // Stop the form submission if any validation failed
+    }
+    // --- End Frontend Validations ---
+
+    const role = 'customer';
+
     signupMutation.mutate({ full_name: fullName, email, address, phone_number: phoneNumber, password, role });
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("authToken");  // Remove token from local storage
+    localStorage.removeItem("authToken");
     localStorage.removeItem("userRole");
-    // Remove the role from local storage
     localStorage.removeItem("userId");
-    setLoggedIn(false);  // Set loggedIn to false
-    window.location.href = "/";   // Redirect to home or login page after logout
+    setLoggedIn(false);
+    window.location.href = "/";
   };
 
   return (

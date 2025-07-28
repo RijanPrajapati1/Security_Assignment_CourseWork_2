@@ -39,7 +39,13 @@ const credSchema = new mongoose.Schema({
     lockout_until: {
         type: Date,
         default: null
+    },
+    // --- UPDATED: isVerified remains, but will be set true upon creation in verifyEmail ---
+    isVerified: {
+        type: Boolean,
+        default: true // Default to true now, as user is only created AFTER verification
     }
+    // --- END UPDATED ---
 });
 
 const Cred = mongoose.model("Cred", credSchema);
