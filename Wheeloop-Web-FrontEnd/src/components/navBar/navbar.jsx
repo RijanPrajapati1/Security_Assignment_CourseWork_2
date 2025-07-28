@@ -50,6 +50,12 @@ const Navbar = () => {
   const [pendingRegistrationData, setPendingRegistrationData] = useState(null);
   // --- END NEW/MODIFIED MFA/OTP STATE ---
 
+  // --- NEW: Password Strength Assessment States ---
+  const [signupPassword, setSignupPassword] = useState('');
+  const [passwordFeedback, setPasswordFeedback] = useState({ message: '', type: '', score: 0 }); // type: 'error', 'warning', 'success'
+  const [confirmPassword, setConfirmPassword] = useState('');
+  // --- END NEW: Password Strength Assessment States ---
+
   useEffect(() => {
     const token = localStorage.getItem("authToken");
     if (token) {
@@ -78,6 +84,84 @@ const Navbar = () => {
     setCurrentOtpUserId(null);
     setCurrentOtpEmail('');
     setPendingRegistrationData(null); // Clear pending data
+    setSignupPassword(''); // Clear password fields on modal toggle
+    setConfirmPassword('');
+    setPasswordFeedback({ message: '', type: '', score: 0 }); // Clear feedback
+  };
+
+  // --- Helper for real-time password strength feedback ---
+  const getPasswordStrengthFeedback = (password) => {
+    const minLength = 12;
+    const maxLength = 64;
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+    let score = 0;
+    let messages = [];
+
+    // Length check
+    if (password.length >= minLength) {
+      score++;
+    } else {
+      messages.push(`Minimum ${minLength} characters.`);
+    }
+    if (password.length <= maxLength) { // Only count if within max, or warn otherwise.
+      // score++; // Don't add score for max length, just ensure it's not over.
+    } else {
+      messages.push(`Maximum ${maxLength} characters.`);
+    }
+
+    if (hasUpperCase) score++; else messages.push('Uppercase letter.');
+    if (hasLowerCase) score++; else messages.push('Lowercase letter.');
+    if (hasNumber) score++; else messages.push('Number.');
+    if (hasSpecialChar) score++; else messages.push('Special character.');
+
+    let type = 'error'; // default
+    let overallMessage = '';
+
+    if (password.length === 0) {
+      return { message: '', type: '', score: 0 }; // No feedback if empty
+    }
+
+    const requirementsMet = [
+      password.length >= minLength && password.length <= maxLength,
+      hasUpperCase,
+      hasLowerCase,
+      hasNumber,
+      hasSpecialChar
+    ].filter(Boolean).length;
+
+
+    if (requirementsMet === 5) {
+      type = 'success';
+      overallMessage = 'Excellent password!';
+    } else if (requirementsMet >= 3) {
+      type = 'warning';
+      overallMessage = 'Good password. Missing: ' + messages.filter(Boolean).join(', ');
+    } else {
+      type = 'error';
+      overallMessage = 'Weak password. Missing: ' + messages.filter(Boolean).join(', ');
+    }
+    // If messages array is empty for 'weak' or 'good' (shouldn't happen if requirementsMet < 5)
+    if (requirementsMet < 5 && messages.length === 0) {
+      overallMessage = "Password does not meet all requirements.";
+    }
+
+
+    return { message: overallMessage, type: type, score: requirementsMet };
+  };
+
+  const handleSignupPasswordChange = (e) => {
+    const newPassword = e.target.value;
+    setSignupPassword(newPassword);
+    const feedback = getPasswordStrengthFeedback(newPassword);
+    setPasswordFeedback(feedback);
+  };
+
+  const handleConfirmPasswordChange = (e) => {
+    setConfirmPassword(e.target.value);
   };
 
   // --- Handle Login Mutation (Modified for MFA) ---
@@ -87,6 +171,12 @@ const Navbar = () => {
       return response.data;
     },
     onSuccess: (data) => {
+      // NOTE: Based on previous discussion "MFA once ever", the backend `login`
+      // controller should now *never* return 'MFA required'. It will always
+      // proceed directly to login if `mfaEnabled` is true in the DB.
+      // This `if (data.message === 'MFA required...')` block is now largely
+      // redundant unless you change the backend logic for login MFA.
+      // Keeping it for robustness in case backend logic evolves.
       if (data.message === 'MFA required. Please verify with OTP.') {
         setMfaRequired(true); // Flag for login MFA
         setCurrentOtpUserId(data.userId); // Store userId for OTP verification
@@ -224,6 +314,9 @@ const Navbar = () => {
       setCurrentOtpUserId(null);
       setCurrentOtpEmail('');
       setPendingRegistrationData(null);
+      setSignupPassword(''); // Clear password fields
+      setConfirmPassword('');
+      setPasswordFeedback({ message: '', type: '', score: 0 }); // Clear feedback
 
       if (data.role === "admin") {
         navigate("/admin");
@@ -289,18 +382,17 @@ const Navbar = () => {
       return;
     }
     if (registrationOtpRequired) {
-      // For registration, resending means re-triggering the register mutation
-      // This is a design choice. Alternatively, you could have a dedicated resend_reg_otp endpoint.
-      // For simplicity and matching your "if otp not correct then again signup" logic, we'll re-prompt for signup.
+      // For registration, if OTP expired or user needs new, they need to re-register.
+      // This is because the backend deletes the temp user on OTP expiry/mismatch.
       toast.info("For registration, if OTP expired, please re-register to get a new one.");
-      // You might want to automatically close the OTP modal and re-open signup here
+      // Automatically close the OTP modal and re-open signup form
       setRegistrationOtpRequired(false);
       setCurrentOtpUserId(null);
       setCurrentOtpEmail('');
       setPendingRegistrationData(null);
       setIsSignupModalOpen(true); // Re-open signup modal
     } else if (mfaRequired) {
-      // For login MFA, use the dedicated resend endpoint
+      // For login MFA (if your backend allowed it, though current backend doesn't trigger login MFA anymore)
       resendMfaOtpMutation.mutate({ userId: currentOtpUserId });
     }
   };
@@ -312,8 +404,8 @@ const Navbar = () => {
     const email = event.target.email.value.trim();
     const address = event.target.address.value.trim();
     const phoneNumber = event.target.phoneNumber.value.trim();
-    const password = event.target.password.value;
-    const confirmPassword = event.target.confirmPassword.value;
+    // const password = event.target.password.value; // Get from state now
+    // const confirmPassword = event.target.confirmPassword.value; // Get from state now
 
     let hasError = false;
 
@@ -324,20 +416,20 @@ const Navbar = () => {
     if (!phoneNumber) { toast.error("Phone Number is required!"); hasError = true; }
     else if (!/^\d{10}$/.test(phoneNumber)) { toast.error("Phone Number must be 10 digits!"); hasError = true; }
 
-    if (!password) {
+    if (!signupPassword) {
       toast.error("Password is required!"); hasError = true;
     } else {
-      const passwordValidationResult = validatePasswordPolicy(password);
+      const passwordValidationResult = validatePasswordPolicy(signupPassword);
       if (!passwordValidationResult.valid) {
         toast.error(passwordValidationResult.message); hasError = true;
       }
     }
-    if (password !== confirmPassword) { toast.error("Passwords do not match!"); hasError = true; }
+    if (signupPassword !== confirmPassword) { toast.error("Passwords do not match!"); hasError = true; }
 
     if (hasError) { return; }
 
     const role = 'customer';
-    signupMutation.mutate({ full_name: fullName, email, address, phone_number: phoneNumber, password, role });
+    signupMutation.mutate({ full_name: fullName, email, address, phone_number: phoneNumber, password: signupPassword, role });
   };
 
   const handleLogout = () => {
@@ -349,8 +441,26 @@ const Navbar = () => {
     navigate("/");
   };
 
+  // Helper to determine the width of the strength bar
+  const getStrengthBarWidth = (score) => {
+    // Max score is 5 (length, uppercase, lowercase, number, special char)
+    return (score / 5) * 100;
+  };
+
+  // Helper to determine the color of the strength bar and text
+  const getStrengthClass = (type) => {
+    switch (type) {
+      case 'error': return 'bg-red-500 text-red-700';
+      case 'warning': return 'bg-orange-500 text-orange-700';
+      case 'success': return 'bg-green-500 text-green-700';
+      default: return ''; // No class for empty/initial state
+    }
+  };
+
+
   return (
     <div className="navbar bg-deepPurple shadow-md">
+      <ToastContainer /> {/* Ensure ToastContainer is rendered */}
       <div className="flex-none">
         <a className="btn btn-ghost normal-case text-2xl font-bold text-white" href="/">
           Wheeloop
@@ -557,7 +667,7 @@ const Navbar = () => {
                 </div>
               </form>
             ) : (
-              // Normal Signup Form
+              // Normal Signup Form (with password strength feedback)
               <form onSubmit={handleSignup}>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-black mb-2">Full Name</label>
@@ -600,15 +710,33 @@ const Navbar = () => {
                   <input
                     type="password"
                     name="password"
+                    value={signupPassword} // Controlled component
+                    onChange={handleSignupPasswordChange} // Handle real-time feedback
                     className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                     required
                   />
+                  {/* Password Strength Feedback */}
+                  {signupPassword.length > 0 && (
+                    <div className="mt-2">
+                      <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                        <div
+                          className={`h-2.5 rounded-full ${getStrengthClass(passwordFeedback.type)} transition-all duration-300`}
+                          style={{ width: `${getStrengthBarWidth(passwordFeedback.score)}%` }}
+                        ></div>
+                      </div>
+                      <p className={`text-sm ${getStrengthClass(passwordFeedback.type)}`}>
+                        {passwordFeedback.message}
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-black mb-2">Confirm Password</label>
                   <input
                     type="password"
                     name="confirmPassword"
+                    value={confirmPassword} // Controlled component
+                    onChange={handleConfirmPasswordChange}
                     className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                     required
                   />
@@ -637,8 +765,6 @@ const Navbar = () => {
           </div>
         </div>
       )}
-
-      <ToastContainer />
     </div>
   );
 };
