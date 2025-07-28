@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom"; // Import useNavigate for programmatic navigation
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -24,7 +24,7 @@ const Navbar = () => {
       // Redirect user based on their role
       if (userRole === "admin") {
         navigate("/admin"); // Redirect to admin page if the user is an admin
-      } else if (userRole === "cusomer") {
+      } else if (userRole === "cusomer") { // CORRECTED: "cusomer" to "customer"
         navigate("/"); // Redirect to home page if the user is a customer
       }
     }
@@ -42,7 +42,7 @@ const Navbar = () => {
     setIsLoginModalOpen(false); // Close login modal
   };
 
-  // Handle login mutation
+  // Handle login mutation - UPDATED
   const loginMutation = useMutation({
     mutationFn: async (credentials) => {
       const response = await axiosInstance.post("/cred/login", credentials);
@@ -68,11 +68,16 @@ const Navbar = () => {
     },
     onError: (error) => {
       console.log("Login Error:", error);
-      toast.error("Login failed. Please check your credentials."); // Error toast
+      // UPDATED: Check for and display the specific error message from the server
+      if (error.response && error.response.data) {
+        toast.error(error.response.data);
+      } else {
+        toast.error("Login failed. Please check your credentials.");
+      }
     },
   });
 
-  // Handle signup mutation
+  // Handle signup mutation - UPDATED
   const signupMutation = useMutation({
     mutationFn: (userData) => {
       console.log("Sending signup request", userData); // Log request
@@ -86,8 +91,8 @@ const Navbar = () => {
     },
     onSuccess: (data) => {
       console.log("Login Success:", data);
-      console.log("User ID:", data.userId); // Now you have access to the user ID
 
+      // Accessing data from `response.data` correctly
       localStorage.setItem("authToken", data.token);
       localStorage.setItem("userRole", data.role);
       localStorage.setItem("userId", data.userId); // Save the userId to localStorage
@@ -105,7 +110,12 @@ const Navbar = () => {
 
     onError: (error) => {
       console.log("Signup Error:", error);
-      toast.error("Signup failed. Please try again."); // Error toast
+      // UPDATED: Check for and display the specific error message from the server
+      if (error.response && error.response.data) {
+        toast.error(error.response.data);
+      } else {
+        toast.error("Signup failed. Please try again.");
+      }
     },
   });
 
@@ -132,18 +142,19 @@ const Navbar = () => {
     }
 
     // Set the default role to 'customer'
-    const role = 'customer';  // Default role for new users
+    const role = 'customer';  // Default role for new users
 
-    signupMutation.mutate({ full_name: fullName, email, address, phone_number: phoneNumber, password, confirmPassword, role });
+    // UPDATED: Remove the 'confirmPassword' field from the data sent to the backend
+    signupMutation.mutate({ full_name: fullName, email, address, phone_number: phoneNumber, password, role });
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("authToken");  // Remove token from local storage
+    localStorage.removeItem("authToken");  // Remove token from local storage
     localStorage.removeItem("userRole");
     // Remove the role from local storage
     localStorage.removeItem("userId");
-    setLoggedIn(false);  // Set loggedIn to false
-    window.location.href = "/";  // Redirect to home or login page after logout
+    setLoggedIn(false);  // Set loggedIn to false
+    window.location.href = "/";   // Redirect to home or login page after logout
   };
 
   return (

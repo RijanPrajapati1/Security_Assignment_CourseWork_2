@@ -1,16 +1,33 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
-const Cred = require("../model/cred");
-const SECRET_KEY = "8261ba19898d0dcdfe6c0c411df74b587b2e54538f5f451633b71e39f957cf01";
 const mongoose = require('mongoose');
-// With this:
+const Cred = require("../model/cred");
+
+// Import the new password validation function
+const passwordPolicy = require('../validation/password_validation');
+
+// --- NEW: Security Constants ---
+const SECRET_KEY = "8261ba19898d0dcdfe6c0c411df74b587b2e54538f5f451633b71e39f957cf01";
 const ObjectId = mongoose.Types.ObjectId;
 
-// Register Controller
+// Brute-force prevention settings
+const MAX_FAILED_ATTEMPTS = 3;
+const LOCKOUT_TIME_MINUTES = 5;
+// --- END NEW ---
+
+// Register Controller - UPDATED
 const register = async (req, res) => {
     console.log("Register request received", req.body);
     const { email, password, full_name, address, phone_number } = req.body;
+
+    // --- NEW: Password Policy Check ---
+    const validationResult = passwordPolicy(password);
+    if (!validationResult.valid) {
+        console.log("Registration failed: Password does not meet policy", email);
+        return res.status(400).send(validationResult.message);
+    }
+    // --- END NEW ---
 
     const role = "customer"; // Force role to "customer"
 
@@ -54,7 +71,7 @@ const register = async (req, res) => {
 };
 
 
-// Verify Email Controller
+// Verify Email Controller - UNCHANGED
 const verifyEmail = async (req, res) => {
     console.log("Email verification request received", req.query);
     const { token } = req.query;
@@ -79,37 +96,65 @@ const verifyEmail = async (req, res) => {
     }
 };
 
-// Login Controller
-// Login Controller
+// Login Controller - UPDATED
 const login = async (req, res) => {
     console.log("Login request received", req.body);
     const { email, password } = req.body;
-    const cred = await Cred.findOne({ email });
+    let cred = await Cred.findOne({ email });
 
     if (!cred) {
         console.log("Login failed: Email not found", email);
         return res.status(403).send('Invalid email or password');
     }
 
+    // Check if the account is currently locked out
+    if (cred.lockout_until && cred.lockout_until > new Date()) {
+        const remainingMinutes = Math.ceil((cred.lockout_until - new Date()) / (1000 * 60));
+        console.log(`Login failed: Account is locked for user ${email}.`);
+        return res.status(403).send(`Account is locked. Please try again in ${remainingMinutes} minutes.`);
+    }
+
     const validPassword = await bcrypt.compare(password, cred.password);
+
     if (!validPassword) {
         console.log("Login failed: Incorrect password", email);
-        return res.status(403).send('Invalid email or password');
+
+        // --- NEW: Countdown logic ---
+        cred.failed_login_attempts += 1;
+        await cred.save();
+
+        const remainingAttempts = MAX_FAILED_ATTEMPTS - cred.failed_login_attempts;
+        if (remainingAttempts > 0) {
+            // Send the specific countdown message
+            return res.status(403).send(`Invalid email or password. You have ${remainingAttempts} attempts remaining.`);
+        } else {
+            // Lockout logic for too many failed attempts
+            cred.lockout_until = new Date(Date.now() + LOCKOUT_TIME_MINUTES * 60 * 1000);
+            console.log(`User ${email} has been locked out for ${LOCKOUT_TIME_MINUTES} minutes.`);
+            await cred.save();
+            return res.status(403).send(`Too many failed login attempts. Your account has been locked for ${LOCKOUT_TIME_MINUTES} minutes.`);
+        }
+        // --- END NEW ---
+    }
+
+    // On successful login, reset failed attempts and lockout
+    if (cred.failed_login_attempts > 0) {
+        cred.failed_login_attempts = 0;
+        cred.lockout_until = null;
+        await cred.save();
     }
 
     const token = jwt.sign({ email: cred.email, role: cred.role }, SECRET_KEY, { expiresIn: '24h' });
     console.log("Login successful", email);
 
-    // Send the token, role, and userId in the response
     res.json({
         token,
         role: cred.role,
-        userId: cred._id.toString()  // Include the userId here
+        userId: cred._id.toString()
     });
 };
 
-
-// Other CRUD operations with logs
+// Other CRUD operations - UNCHANGED
 const findAll = async (req, res) => {
     try {
         const users = await Cred.find();
@@ -123,8 +168,7 @@ const findAll = async (req, res) => {
 
 const findById = async (req, res) => {
     try {
-        // Ensure the id is a valid ObjectId
-        const userId = ObjectId(req.params.id); // Convert to ObjectId
+        const userId = new ObjectId(req.params.id);
         const user = await Cred.findById(userId);
 
         if (!user) {

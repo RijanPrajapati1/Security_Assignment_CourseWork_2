@@ -9,13 +9,13 @@ const notification_route = require("./routes/notification_route")
 
 const cors = require('cors');
 const cred_route = require("./routes/cred_route")
-const path = require("path");  // <-- Add this line
+const path = require("path");
 
 const app = express();
 
 connectDb();
 app.use(cors({
-    origin: "http://localhost:5173", // Your frontend URL
+    origin: "http://localhost:5173",
     methods: "GET,POST,PUT,DELETE",
     allowedHeaders: "Content-Type, Authorization",
     credentials: true

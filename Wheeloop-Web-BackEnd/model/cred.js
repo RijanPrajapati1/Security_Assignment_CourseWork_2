@@ -31,6 +31,14 @@ const credSchema = new mongoose.Schema({
     createdAt: {
         type: Date,
         default: Date.now
+    },
+    failed_login_attempts: {
+        type: Number,
+        default: 0
+    },
+    lockout_until: {
+        type: Date,
+        default: null
     }
 });
 

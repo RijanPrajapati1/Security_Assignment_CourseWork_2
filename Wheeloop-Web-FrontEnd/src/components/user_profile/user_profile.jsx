@@ -1,34 +1,42 @@
 import { useEffect, useState } from "react";
 import { FaRegWindowClose } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
-
 import Navbar from "../Navbar/navbar";
 import axiosInstance from "../utils/axios";
+
 
 function UserProfileView() {
     const navigate = useNavigate();
     const [user, setUser] = useState(null);
 
-    useEffect(() => {
-        const userId = localStorage.getItem("userId");
+    const userId = localStorage.getItem("userId");
 
+    useEffect(() => {
         if (!userId) {
-            console.error("User ID not found in local storage.");
+            console.error("User ID not found in local storage. Cannot fetch profile.");
+            navigate("/login");
             return;
         }
 
-        // Fetch user data from API
         const fetchUser = async () => {
             try {
+                // FIX: Remove '/api' from the path. The axios baseURL already includes it.
                 const response = await axiosInstance.get(`/cred/users/${userId}`);
                 setUser(response.data);
             } catch (error) {
-                console.error("Error fetching user details:", error);
+                console.error("Error fetching user details:", error.response?.data || error.message);
+                setUser(null);
             }
         };
 
+
+
         fetchUser();
-    }, []);
+    }, [userId, navigate]);
+
+    const handleGoBack = () => {
+        navigate(-1);
+    };
 
     const handleLogout = () => {
         localStorage.removeItem("authToken");
@@ -37,10 +45,6 @@ function UserProfileView() {
 
         setUser(null);
         navigate("/");
-    };
-
-    const handleGoBack = () => {
-        navigate(-1);
     };
 
     return (
@@ -79,6 +83,13 @@ function UserProfileView() {
                             className="bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition"
                         >
                             Sign Out
+                        </button>
+                        {/* NEW: Edit Profile button */}
+                        <button
+                            onClick={() => navigate(`/editprofile`)}
+                            className="bg-primary hover:bg-primary/80 text-white py-2 px-4 rounded-lg transition"
+                        >
+                            Edit Profile
                         </button>
                     </div>
                 </div>

@@ -1,5 +1,4 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
 import { Route, BrowserRouter as Router, Routes } from "react-router-dom";
 
 import CarListing from "./components/Car/carCard";
@@ -11,6 +10,7 @@ import Contact from "./components/contact/contact";
 import NotificationPanel from "./components/notification/notification";
 import FetchPayment from "./components/payment/fetchingPayment";
 import Payment from "./components/payment/payment";
+import EditProfileView from "./components/user_profile/edit_profile.";
 import UserProfile from "./components/user_profile/user_profile";
 
 
@@ -28,6 +28,7 @@ const App = () => {
           <Route path="/booking" element={<Booking />} />
           <Route path="/payment" element={<Payment />} />
           <Route path="/userprofile" element={<UserProfile />} />
+          <Route path="/editprofile" element={<EditProfileView />} />
           <Route path="/fetchpayment" element={<FetchPayment />} />
           <Route path="/notification" element={<NotificationPanel />} />
         </Routes>

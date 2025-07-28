@@ -70,19 +70,24 @@ router.get("/verify-email", verifyEmail);
 router.post("/login", login);
 
 // CRUD operations for users
-router.get("/users", findAll);  // Get all users
+router.get("/users", authenticateToken, findAll); // Get all users (protected)
+
+// --- FIX: Uncommented middleware for security ---
 router.get("/users/:id",
-    // authenticateToken,
-    // authorizeRole("admin"),
-    findById);  // Get user by ID
+    authenticateToken, // Now this route requires a valid token
+    findById); // Get user by ID
+
+// We will use this route for profile updates in a later step
+// --- FIX: Uncommented middleware for security ---
 router.put("/users/:id",
-    // authenticateToken, authorizeRole("admin"),
-    update);  // Update user by ID
+    authenticateToken, // Now this route requires a valid token
+    update); // Update user by ID
+
+// Admin-only routes
 router.delete("/users/:id",
     authenticateToken, authorizeRole("admin"),
-    deleteById);  // Delete user by ID
+    deleteById);  // Delete user by ID
 
-// Admin-specific route
 router.get("/admin-data", authenticateToken, authorizeRole("admin"), (req, res) => {
     res.send("Admin-specific data: You have admin access!");
 });
