@@ -5,10 +5,6 @@ const Payment = require("../model/payment");
 
 const axios = require('axios'); // Import axios for CAPTCHA verification
 
-// !!! WARNING: HARDCODING SECRET KEY - DO NOT DO THIS IN PRODUCTION !!!
-// For debugging purposes, directly insert your reCAPTCHA Secret Key here.
-// Once confirmed working, revert this to process.env.GOOGLE_RECAPTCHA_SECRET_KEY
-// and fix your .env loading issue.
 const RECAPTCHA_SECRET_KEY = "6LdrPpMrAAAAAASM07eb9uZskFLFqLG3CbVca_MF"; // <--- HARDCODED SECRET KEY HERE
 
 // Process Payment
