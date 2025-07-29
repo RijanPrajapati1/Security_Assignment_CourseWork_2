@@ -1,18 +1,24 @@
+// frontend/src/pages/Payment.jsx
+
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import Navbar from "../navBar/navbar";
 import axiosInstance from "../utils/axios";
 
-// Removed react-toastify imports
-// import { ToastContainer, toast } from 'react-toastify';
-// import 'react-toastify/dist/ReactToastify.css';
+// Import ToastContainer and toast for notifications
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
+// Import ReCAPTCHA component
+import ReCAPTCHA from "react-google-recaptcha";
+
 
 const Payment = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const bookingId = localStorage.getItem("bookingId");
-    const userId = localStorage.getItem("userId"); // Ensure userId is available
+    const userId = localStorage.getItem("userId");
 
     // Extract booking details from navigation state
     const {
@@ -38,13 +44,17 @@ const Payment = () => {
         cardHolder: "",
         cardNumber: "",
         expiryDate: "",
-        cvv: "" // CVV is now masked in the input field
+        cvv: ""
     });
 
     // State for PayPal transaction ID
     const [transactionId, setTransactionId] = useState("");
 
     const [loading, setLoading] = useState(false);
+
+    // --- NEW: CAPTCHA STATE ---
+    const [captchaValue, setCaptchaValue] = useState(null); // Stores the CAPTCHA token
+    // --- END NEW CAPTCHA STATE ---
 
     // Handles input changes for card details
     const handleInputChange = (e) => {
@@ -56,7 +66,14 @@ const Payment = () => {
         // Clear inputs when method changes
         setCardDetails({ cardHolder: "", cardNumber: "", expiryDate: "", cvv: "" });
         setTransactionId("");
+        setCaptchaValue(null); // Reset CAPTCHA value on method change for a fresh one
     };
+
+    // --- NEW: CAPTCHA Change Handler ---
+    const handleCaptchaChange = (value) => {
+        setCaptchaValue(value); // Set the CAPTCHA token
+    };
+    // --- END NEW: CAPTCHA Change Handler ---
 
     const handlePayment = async (e) => {
         e.preventDefault();
@@ -65,43 +82,53 @@ const Payment = () => {
         try {
             // Essential validation before proceeding
             if (!bookingId || !userId || totalAmount <= 0) {
-                alert("Missing essential booking details. Please go back to booking."); // Reverted to alert
-                navigate('/Booking');
+                toast.error("Missing essential booking details. Please go back to booking.");
+                navigate('/Booking'); // Redirect if essential data is missing
                 return;
             }
 
-            // --- Frontend Validation based on selected method ---
+            // --- Frontend CAPTCHA Validation ---
+            if (!captchaValue) {
+                toast.error("Please complete the CAPTCHA verification.");
+                setLoading(false);
+                return;
+            }
+            // --- End Frontend CAPTCHA Validation ---
+
+            // --- Frontend Payment Method Specific Validation ---
             if (paymentMethod === "card") {
                 // --- CRITICAL SECURITY WARNING: This code is for MOCK/DEMO ONLY ---
-                // Direct collection of card details is INSECURE and NOT PCI COMPLIANT.
-                alert("SECURITY WARNING: This 'Credit/Debit Card' option is for **mocking/demonstration ONLY**. It is **INSECURE** for real payments and violates PCI DSS."); // Reverted to alert
+                toast.warn("SECURITY WARNING: This 'Credit/Debit Card' option is for **mocking/demonstration ONLY**. It directly collects sensitive card data which is **NOT secure or PCI Compliant** for real transactions.");
 
                 if (!cardDetails.cardHolder || !cardDetails.cardNumber || !cardDetails.expiryDate || !cardDetails.cvv) {
-                    alert("Please fill in all card details for the mock payment."); // Reverted to alert
+                    toast.error("Please fill in all card details for the mock payment.");
                     setLoading(false);
                     return;
                 }
-                if (!/^\d{13,19}$/.test(cardDetails.cardNumber)) { // Cards can be 13-19 digits
-                    alert("Card number must be 13-19 digits (mock)."); // Reverted to alert
+                // Basic regex for card numbers (13-19 digits), adjust as needed for specific card types
+                if (!/^\d{13,19}$/.test(cardDetails.cardNumber)) {
+                    toast.error("Card number must be 13-19 digits (mock).");
                     setLoading(false);
                     return;
                 }
+                // Basic regex for MM/YY
                 if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(cardDetails.expiryDate)) {
-                    alert("Expiry date format must be MM/YY (mock)."); // Reverted to alert
+                    toast.error("Expiry date format must be MM/YY (mock).");
                     setLoading(false);
                     return;
                 }
+                // Basic regex for CVV (3 or 4 digits)
                 if (!/^\d{3,4}$/.test(cardDetails.cvv)) {
-                    alert("CVV must be 3 or 4 digits (mock)."); // Reverted to alert
+                    toast.error("CVV must be 3 or 4 digits (mock).");
                     setLoading(false);
                     return;
                 }
             } else if (paymentMethod === "paypal" && !transactionId) {
-                alert("Please enter a valid PayPal transaction ID."); // Reverted to alert
+                toast.error("Please enter a valid PayPal transaction ID.");
                 setLoading(false);
                 return;
             }
-            // No specific frontend validation for 'cash'
+            // No specific frontend validation for 'cash' as it's pending initially
 
             // Prepare payment data to send to backend
             const paymentData = {
@@ -109,25 +136,31 @@ const Payment = () => {
                 bookingId,
                 totalAmount,
                 paymentMethod,
-                // transactionId is used for PayPal and optional for Card mock
                 transactionId: (paymentMethod === "paypal" || paymentMethod === "card") ? transactionId : null,
-                // CardDetails sent ONLY if 'card' method selected, for mock purposes
-                cardDetails: paymentMethod === "card" ? cardDetails : undefined // Send cardDetails for mock card
+                // Ensure cardDetails is passed as an object to match backend's expectation
+                cardDetails: paymentMethod === "card"
+                    ? {
+                        cardNumber: cardDetails.cardNumber, // Send full number for backend masking
+                        expiryDate: cardDetails.expiryDate,
+                        cardHolderName: cardDetails.cardHolder
+                    }
+                    : undefined,
+                captchaValue: captchaValue // Send CAPTCHA token to backend
             };
 
             // Send payment request to backend's central processing endpoint
             const response = await axiosInstance.post("/payment/process", paymentData);
 
             if (response.status === 201) {
-                alert("Payment initiated! Booking confirmed."); // Reverted to alert
-                localStorage.removeItem("bookingId"); // Clear bookingId from storage
-                navigate("/"); // Redirect to home or bookings list
+                toast.success("Payment initiated! Booking confirmed.");
+                localStorage.removeItem("bookingId"); // Clear bookingId after successful payment
+                navigate("/"); // Redirect to home or a success page
             } else {
-                alert("Payment failed! Please try again."); // Reverted to alert
+                toast.error("Payment failed! Please try again.");
             }
         } catch (error) {
             console.error("Error processing payment:", error.response?.data || error.message);
-            alert(error.response?.data?.message || "Error: Unable to process payment."); // Reverted to alert
+            toast.error(error.response?.data?.message || "Error: Unable to process payment.");
         } finally {
             setLoading(false);
         }
@@ -136,7 +169,7 @@ const Payment = () => {
     return (
         <div>
             <Navbar />
-            {/* Removed ToastContainer */}
+            <ToastContainer /> {/* Add ToastContainer here for notifications */}
             <div className="bg-gray-100 min-h-screen flex flex-col items-center justify-center p-6">
                 <h1 className="text-3xl font-bold mb-6 text-gray-800">Secure Payment</h1>
 
@@ -229,7 +262,7 @@ const Payment = () => {
                                     <div className="w-1/2">
                                         <label className="block text-sm font-medium text-gray-700">CVV</label>
                                         <input
-                                            type="password" // Changed to type="password" to mask input
+                                            type="password" // Masked input
                                             name="cvv"
                                             value={cardDetails.cvv}
                                             onChange={handleInputChange}
@@ -276,6 +309,15 @@ const Payment = () => {
                                 />
                             </div>
                         )}
+
+                        {/* NEW: ReCAPTCHA Component */}
+                        <div className="mb-6 flex justify-center">
+                            <ReCAPTCHA
+                                sitekey="6LdrPpMrAAAAAMQSf5FTNa6XEQU-j6trDEv0apvo" // <--- **VERIFY THIS SITE KEY FROM GOOGLE ADMIN CONSOLE**
+                                onChange={handleCaptchaChange}
+                            // You can add onExpired, onErrored handlers for more robust behavior
+                            />
+                        </div>
 
                         <button type="submit" className="w-full px-4 py-2 text-white bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold focus:outline-none transition duration-300" disabled={loading}>
                             {loading ? "Processing..." : "Pay & Confirm Booking"}
