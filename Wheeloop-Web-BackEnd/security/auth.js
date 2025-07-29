@@ -1,21 +1,20 @@
-// src/security/auth.js (Example - verify this matches your actual file)
+
 
 const jwt = require('jsonwebtoken');
-const Cred = require('../model/cred'); // Path to your Cred model
+const Cred = require('../model/cred');
 
-const SECRET_KEY = process.env.JWT_SECRET || "8261ba19898d0dcdfe6c0c411df74b587b2e54538f5f451633b71e39f957cf01"; // Must match your controller
+const SECRET_KEY = process.env.JWT_SECRET || "8261ba19898d0dcdfe6c0c411df74b587b2e54538f5f451633b71e39f957cf01";
 
 const authenticateToken = async (req, res, next) => {
     let token;
 
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
         try {
-            token = req.headers.authorization.split(' ')[1]; // Get token from "Bearer <token>"
+            token = req.headers.authorization.split(' ')[1];
 
             const decoded = jwt.verify(token, SECRET_KEY);
 
-            // Find the user's cred document and attach it to the request
-            // `select('+password')` is NOT needed here as we don't need password for auth checks
+
             req.user = await Cred.findById(decoded.id);
 
             if (!req.user) {
