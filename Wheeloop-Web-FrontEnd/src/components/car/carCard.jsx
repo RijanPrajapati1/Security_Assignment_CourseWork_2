@@ -3,7 +3,8 @@ import { FaCogs, FaRoad, FaUser } from "react-icons/fa";
 
 import { useNavigate } from "react-router-dom";
 
-import Navbar from "../Navbar/navbar";
+
+import Navbar from "../navBar/navbar";
 import axiosInstance from "../utils/axios";
 
 

@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import Navbar from "../Navbar/navbar"; // Make sure the path is correct
+import Navbar from "../navBar/navbar"; // Make sure the path is correct
 import axiosInstance from "../utils/axios"; // Make sure the path is correct
 
 function EditProfileView() {

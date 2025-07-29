@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 
-import Navbar from "../Navbar/navbar";
+import Navbar from "../navBar/navbar";
 import axiosInstance from "../utils/axios";
 
 const Payment = () => {

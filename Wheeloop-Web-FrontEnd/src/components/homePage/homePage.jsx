@@ -1,8 +1,8 @@
 import AOS from "aos";
 import "aos/dist/aos.css";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { FaCarSide, FaEnvelope, FaMapMarkerAlt, FaPhone } from "react-icons/fa";
-import Navbar from "../Navbar/navbar";
+import Navbar from "../navBar/navbar";
 
 
 const HomePage = () => {
