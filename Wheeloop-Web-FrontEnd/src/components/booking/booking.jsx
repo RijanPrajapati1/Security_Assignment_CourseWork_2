@@ -85,9 +85,9 @@ const Booking = () => {
 
                                         let carImage = "/default-car.jpg";
                                         if (booking.carId?.image) {
-                                            carImage = booking.carId.image.startsWith("http")
+                                            carImage = booking.carId.image.startsWith("https")
                                                 ? booking.carId.image
-                                                : `http://localhost:3001/car_images/${booking.carId.image}`;
+                                                : `https://localhost:3001/car_images/${booking.carId.image}`;
                                         }
 
                                         return (

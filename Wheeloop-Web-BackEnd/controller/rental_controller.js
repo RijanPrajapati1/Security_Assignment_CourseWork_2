@@ -36,7 +36,7 @@ const findUserBookings = async (req, res) => {
             if (rental.carId && rental.carId.image) {
                 // If image URL already contains "http", don't modify it
                 if (!rental.carId.image.startsWith("http")) {
-                    rental.carId.image = `http://localhost:3001/car_images/${rental.carId.image}`;
+                    rental.carId.image = `https://localhost:3001/car_images/${rental.carId.image}`;
                 }
             }
         });

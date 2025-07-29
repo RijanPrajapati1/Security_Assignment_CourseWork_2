@@ -42,7 +42,7 @@ describe('Car API Routes', () => {
         const response = await request(app).get('/api/car/findAll');
         expect(response.status).toBe(200);
         expect(response.body[0].name).toBe('Toyota Prius');
-        expect(response.body[0].image).toBe('http://localhost:3001/car_images/sample-image.jpg');
+        expect(response.body[0].image).toBe('https://localhost:3001/car_images/sample-image.jpg');
     });
 
     // Test for Saving a Car with Image Upload

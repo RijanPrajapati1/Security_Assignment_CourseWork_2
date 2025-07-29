@@ -12,7 +12,7 @@ const passwordPolicy = require('../validation/password_validation');
 const SECRET_KEY = process.env.JWT_SECRET || "8261ba19898d0dcdfe6c0c411df74b587b2e54538f5f451633b71e39f957cf01";
 const EMAIL_USER = process.env.EMAIL_USER || "rijanpraz@gmail.com";
 const EMAIL_PASS = process.env.EMAIL_PASS || "hnbyxbgpqqtrwkci"; // Your Gmail App Password
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+const CLIENT_URL = process.env.CLIENT_URL || 'https://localhost:5173';
 
 // Brute-force prevention settings
 const MAX_FAILED_ATTEMPTS = 3;

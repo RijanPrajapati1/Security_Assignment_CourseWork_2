@@ -46,6 +46,6 @@ describe('HomePage Component', () => {
         fireEvent.click(button);
 
         // Check if the navigation happens (you can check if the location changes)
-        expect(window.location.href).toBe('http://localhost/carlists');
+        expect(window.location.href).toBe('https://localhost/carlists');
     });
 });

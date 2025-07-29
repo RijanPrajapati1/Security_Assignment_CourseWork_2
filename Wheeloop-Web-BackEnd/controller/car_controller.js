@@ -6,7 +6,7 @@ const findAll = async (req, res) => {
         const cars = await Car.find();
         const carsWithImages = cars.map(car => ({
             ...car._doc,
-            image: `http://localhost:3001/car_images/${car.image}`
+            image: `https://localhost:3001/car_images/${car.image}`
         }));
         res.status(200).json(carsWithImages);
     } catch (e) {
@@ -46,7 +46,7 @@ const findById = async (req, res) => {
 
         res.status(200).json({
             ...car._doc,
-            image: `http://localhost:3001/car_images/${car.image}`
+            image: `https://localhost:3001/car_images/${car.image}`
         });
     } catch (e) {
         res.status(500).json({ message: "Error fetching car", error: e.message });
@@ -72,7 +72,7 @@ const update = async (req, res) => {
 
         res.status(200).json({
             ...updatedCar._doc,
-            image: `http://localhost:3001/car_images/${updatedCar.image}`
+            image: `https://localhost:3001/car_images/${updatedCar.image}`
         });
     } catch (e) {
         res.status(500).json({ message: "Error updating car", error: e.message });
