@@ -4,7 +4,7 @@ import axios from 'axios';
 
 const axiosInstance = axios.create({
     // FIX: Change the baseURL to just the domain and port
-    baseURL: 'http://localhost:3001/api',
+    baseURL: 'https://localhost:3001/api',
     timeout: 5000,
 });
 
