@@ -16,8 +16,6 @@ const HomePage = () => {
     return (
         <div>
             <Navbar />
-            {/* Home Section */}
-            {/* Home Section */}
             <section id="home" className="w-full min-h-screen bg-white flex items-center justify-center">
                 <div className="w-full px-6 sm:px-12 lg:px-20 flex flex-col lg:flex-row items-center justify-between gap-8">
                     {/* Text Section */}
