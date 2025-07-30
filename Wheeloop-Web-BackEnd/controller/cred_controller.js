@@ -276,15 +276,11 @@ const verifyMfaOtp = async (req, res) => {
             return res.status(404).send('User not found.');
         }
 
-        // We only proceed if MFA is enabled AND there's an active OTP.
-        // In the "one-time ever" model, this part would typically only be for enabling/disabling MFA,
-        // not for a standard login flow.
+
         if (!cred.mfaEnabled || !cred.mfaOtp || !cred.mfaOtpExpires || cred.mfaOtp !== otp || cred.mfaOtpExpires < new Date()) {
-            // Handle incorrect/expired OTP during a "toggle MFA" attempt
             cred.mfaOtp = undefined;
             cred.mfaOtpExpires = undefined;
-            // Optionally, add brute-force for MFA toggle
-            // cred.failed_login_attempts = (cred.failed_login_attempts || 0) + 1;
+
             await cred.save();
             return res.status(401).send('Invalid or expired One-Time Password or MFA not initiated.');
         }
@@ -292,12 +288,12 @@ const verifyMfaOtp = async (req, res) => {
         // OTP is valid, clear it from DB
         cred.mfaOtp = undefined;
         cred.mfaOtpExpires = undefined;
-        // Reset login attempts if this was somehow tied to login attempts
+
         cred.failed_login_attempts = 0;
         cred.lockout_until = null;
         await cred.save();
 
-        // Generate a token reflecting MFA completion (if this was a manual MFA enablement)
+
         const token = generateAuthToken(cred._id.toString(), cred.role, cred.full_name, true);
         console.log(`MFA successful for user ${cred.email} (if this was an explicit MFA toggle/verification).`);
 
@@ -315,9 +311,6 @@ const verifyMfaOtp = async (req, res) => {
     }
 };
 
-// --- Resend Login MFA OTP (This endpoint will also effectively be dormant for *login* purposes) ---
-// Similar to `verifyMfaOtp`, this would only be used if you have a separate feature
-// where users can explicitly request OTPs (e.g., for enabling MFA).
 const resendMfaOtp = async (req, res) => {
     const { userId } = req.body;
 
@@ -327,8 +320,8 @@ const resendMfaOtp = async (req, res) => {
         if (!cred) {
             return res.status(404).send('User not found.');
         }
-        // Only allow resend if MFA is truly enabled AND an OTP was previously sent (e.g., in a toggle flow)
-        if (!cred.mfaEnabled || !cred.mfaOtp) { // Check for existing OTP to prevent spam
+
+        if (!cred.mfaEnabled || !cred.mfaOtp) {
             return res.status(400).send('MFA not initiated or already verified for this account.');
         }
 
@@ -362,7 +355,7 @@ const resendMfaOtp = async (req, res) => {
 };
 
 
-// --- CRUD Operations (No changes here) ---
+
 const findAll = async (req, res) => {
     try {
         const users = await Cred.find();
@@ -438,8 +431,8 @@ module.exports = {
     login,
     register,
     verifyRegistrationOtp,
-    verifyMfaOtp, // Kept for potential future "toggle MFA" feature
-    resendMfaOtp, // Kept for potential future "toggle MFA" feature
+    verifyMfaOtp,
+    resendMfaOtp,
     findAll,
     findById,
     update,
