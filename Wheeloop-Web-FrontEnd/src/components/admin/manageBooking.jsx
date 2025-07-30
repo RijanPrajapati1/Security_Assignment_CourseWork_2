@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { FaEdit, FaTrashAlt } from "react-icons/fa";
 import axiosInstance from "../utils/axios";
 
@@ -10,7 +10,7 @@ const ManageBookings = () => {
     const [isEditing, setIsEditing] = useState(false);
     const [currentBooking, setCurrentBooking] = useState(null);
 
-    // ✅ Fetch all bookings for Admin
+
     useEffect(() => {
         const fetchBookings = async () => {
             try {
@@ -27,19 +27,18 @@ const ManageBookings = () => {
         fetchBookings();
     }, []);
 
-    // ✅ Handle search input
+
     const handleSearchChange = (e) => {
         setSearchTerm(e.target.value);
     };
 
-    // ✅ Filter bookings based on search
+
     const filteredBookings = bookings.filter(
         (booking) =>
             booking.userId?.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
             booking.carId?.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // ✅ Handle status change
     const handleStatusChange = async (id, newStatus) => {
         try {
             await axiosInstance.put(`/rental/updateBooking/${id}`, { status: newStatus });
@@ -53,7 +52,7 @@ const ManageBookings = () => {
         }
     };
 
-    // ✅ Handle delete action with confirmation alert
+
     const handleDelete = async (id) => {
         if (window.confirm("Are you sure you want to delete this booking?")) {
             try {
@@ -65,13 +64,13 @@ const ManageBookings = () => {
         }
     };
 
-    // ✅ Handle edit modal toggle
+
     const handleEdit = (booking) => {
         setCurrentBooking({ ...booking });
         setIsEditing(true);
     };
 
-    // ✅ Handle save action in edit modal
+
     const handleSave = async () => {
         if (!currentBooking) return;
 
@@ -100,7 +99,7 @@ const ManageBookings = () => {
                 className="w-full px-4 py-3 bg-white text-black border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
 
-            {/* ✅ Edit Booking Modal */}
+
             {isEditing && (
                 <div className="fixed inset-0 bg-gray-500 bg-opacity-50 flex justify-center items-center">
                     <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
@@ -157,7 +156,7 @@ const ManageBookings = () => {
                 </div>
             )}
 
-            {/* ✅ Booking Table */}
+
             <table className="table-auto w-full border mt-6">
                 <thead>
                     <tr className="bg-gray-200">
