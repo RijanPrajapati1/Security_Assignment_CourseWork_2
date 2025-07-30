@@ -6,11 +6,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Navbar from "../navBar/navbar";
 import axiosInstance from "../utils/axios";
 
-// Import ToastContainer and toast for notifications
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// Import ReCAPTCHA component
 import ReCAPTCHA from "react-google-recaptcha";
 
 
@@ -20,7 +18,6 @@ const Payment = () => {
     const bookingId = localStorage.getItem("bookingId");
     const userId = localStorage.getItem("userId");
 
-    // Extract booking details from navigation state
     const {
         carId,
         carName,
@@ -32,14 +29,14 @@ const Payment = () => {
         endDate
     } = location.state || {};
 
-    // Keep totalAmount calculation exactly as it was before
+
     const driverCost = driverDays * 500 * rentalDays;
     const totalAmount = rentalDays * pricePerDay + driverCost;
 
-    // State for payment method - Defaulting to "card" as requested
+
     const [paymentMethod, setPaymentMethod] = useState("card");
 
-    // State for card details (used ONLY for the insecure mock/demo 'card' method)
+
     const [cardDetails, setCardDetails] = useState({
         cardHolder: "",
         cardNumber: "",
@@ -47,14 +44,14 @@ const Payment = () => {
         cvv: ""
     });
 
-    // State for PayPal transaction ID
+
     const [transactionId, setTransactionId] = useState("");
 
     const [loading, setLoading] = useState(false);
 
-    // --- NEW: CAPTCHA STATE ---
+
     const [captchaValue, setCaptchaValue] = useState(null); // Stores the CAPTCHA token
-    // --- END NEW CAPTCHA STATE ---
+
 
     // Handles input changes for card details
     const handleInputChange = (e) => {
@@ -66,24 +63,23 @@ const Payment = () => {
         // Clear inputs when method changes
         setCardDetails({ cardHolder: "", cardNumber: "", expiryDate: "", cvv: "" });
         setTransactionId("");
-        setCaptchaValue(null); // Reset CAPTCHA value on method change for a fresh one
+        setCaptchaValue(null);
     };
 
-    // --- NEW: CAPTCHA Change Handler ---
+
     const handleCaptchaChange = (value) => {
         setCaptchaValue(value); // Set the CAPTCHA token
-    };
-    // --- END NEW: CAPTCHA Change Handler ---
+    }
 
     const handlePayment = async (e) => {
         e.preventDefault();
         setLoading(true);
 
         try {
-            // Essential validation before proceeding
+
             if (!bookingId || !userId || totalAmount <= 0) {
                 toast.error("Missing essential booking details. Please go back to booking.");
-                navigate('/Booking'); // Redirect if essential data is missing
+                navigate('/Booking');
                 return;
             }
 
@@ -128,9 +124,7 @@ const Payment = () => {
                 setLoading(false);
                 return;
             }
-            // No specific frontend validation for 'cash' as it's pending initially
 
-            // Prepare payment data to send to backend
             const paymentData = {
                 userId,
                 bookingId,
