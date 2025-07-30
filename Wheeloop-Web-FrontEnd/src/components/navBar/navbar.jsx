@@ -3,10 +3,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import axiosInstance from "../utils/axios"; // Assuming axiosInstance is configured for your backend API base URL
+import axiosInstance from "../utils/axios";
 
-// FIX: Make sure your baseURL in src/utils/axios.js is just 'http://localhost:3001'
-// and NOT 'http://localhost:3001/api' if your routes start with /api/cred/...
 
 const validatePasswordPolicy = (password) => {
   const minLength = 12;
@@ -40,21 +38,19 @@ const Navbar = () => {
   const [loggedIn, setLoggedIn] = useState(false);
   const navigate = useNavigate();
 
-  // --- NEW/MODIFIED MFA/OTP STATE ---
-  const [mfaRequired, setMfaRequired] = useState(false); // For login flow
-  const [registrationOtpRequired, setRegistrationOtpRequired] = useState(false); // For signup flow
-  const [currentOtpUserId, setCurrentOtpUserId] = useState(null); // userId (cred._id) for current OTP verification (either reg or login)
-  const [currentOtpEmail, setCurrentOtpEmail] = useState(''); // Email for current OTP display
 
-  // States to hold registration data until OTP is verified
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [registrationOtpRequired, setRegistrationOtpRequired] = useState(false);
+  const [currentOtpUserId, setCurrentOtpUserId] = useState(null);
+  const [currentOtpEmail, setCurrentOtpEmail] = useState('');
+
   const [pendingRegistrationData, setPendingRegistrationData] = useState(null);
-  // --- END NEW/MODIFIED MFA/OTP STATE ---
 
-  // --- NEW: Password Strength Assessment States ---
+
   const [signupPassword, setSignupPassword] = useState('');
-  const [passwordFeedback, setPasswordFeedback] = useState({ message: '', type: '', score: 0 }); // type: 'error', 'warning', 'success'
+  const [passwordFeedback, setPasswordFeedback] = useState({ message: '', type: '', score: 0 });
   const [confirmPassword, setConfirmPassword] = useState('');
-  // --- END NEW: Password Strength Assessment States ---
+
 
   useEffect(() => {
     const token = localStorage.getItem("authToken");
@@ -72,7 +68,7 @@ const Navbar = () => {
   const toggleLoginModal = () => {
     setIsLoginModalOpen(!isLoginModalOpen);
     setIsSignupModalOpen(false);
-    setMfaRequired(false); // Reset login MFA state
+    setMfaRequired(false);
     setCurrentOtpUserId(null);
     setCurrentOtpEmail('');
   };
@@ -80,16 +76,16 @@ const Navbar = () => {
   const toggleSignupModal = () => {
     setIsSignupModalOpen(!isSignupModalOpen);
     setIsLoginModalOpen(false);
-    setRegistrationOtpRequired(false); // Reset registration OTP state
+    setRegistrationOtpRequired(false);
     setCurrentOtpUserId(null);
     setCurrentOtpEmail('');
-    setPendingRegistrationData(null); // Clear pending data
-    setSignupPassword(''); // Clear password fields on modal toggle
+    setPendingRegistrationData(null);
+    setSignupPassword('');
     setConfirmPassword('');
-    setPasswordFeedback({ message: '', type: '', score: 0 }); // Clear feedback
+    setPasswordFeedback({ message: '', type: '', score: 0 });
   };
 
-  // --- Helper for real-time password strength feedback ---
+
   const getPasswordStrengthFeedback = (password) => {
     const minLength = 12;
     const maxLength = 64;
@@ -101,14 +97,13 @@ const Navbar = () => {
     let score = 0;
     let messages = [];
 
-    // Length check
+
     if (password.length >= minLength) {
       score++;
     } else {
       messages.push(`Minimum ${minLength} characters.`);
     }
-    if (password.length <= maxLength) { // Only count if within max, or warn otherwise.
-      // score++; // Don't add score for max length, just ensure it's not over.
+    if (password.length <= maxLength) {
     } else {
       messages.push(`Maximum ${maxLength} characters.`);
     }
@@ -118,11 +113,11 @@ const Navbar = () => {
     if (hasNumber) score++; else messages.push('Number.');
     if (hasSpecialChar) score++; else messages.push('Special character.');
 
-    let type = 'error'; // default
+    let type = 'error';
     let overallMessage = '';
 
     if (password.length === 0) {
-      return { message: '', type: '', score: 0 }; // No feedback if empty
+      return { message: '', type: '', score: 0 };
     }
 
     const requirementsMet = [
@@ -171,12 +166,6 @@ const Navbar = () => {
       return response.data;
     },
     onSuccess: (data) => {
-      // NOTE: Based on previous discussion "MFA once ever", the backend `login`
-      // controller should now *never* return 'MFA required'. It will always
-      // proceed directly to login if `mfaEnabled` is true in the DB.
-      // This `if (data.message === 'MFA required...')` block is now largely
-      // redundant unless you change the backend logic for login MFA.
-      // Keeping it for robustness in case backend logic evolves.
       if (data.message === 'MFA required. Please verify with OTP.') {
         setMfaRequired(true); // Flag for login MFA
         setCurrentOtpUserId(data.userId); // Store userId for OTP verification
