@@ -1,5 +1,4 @@
 const passwordPolicy = (password) => {
-    // Define your password rules
     const minLength = 12;
     const maxLength = 64;
     const hasUpperCase = /[A-Z]/.test(password);
@@ -7,7 +6,6 @@ const passwordPolicy = (password) => {
     const hasNumber = /[0-9]/.test(password);
     const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
 
-    // Check if all conditions are met
     if (password.length < minLength || password.length > maxLength) {
         return { valid: false, message: `Password must be between ${minLength} and ${maxLength} characters.` };
     }
