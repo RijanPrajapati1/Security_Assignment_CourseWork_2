@@ -1,5 +1,3 @@
-
-
 const jwt = require('jsonwebtoken');
 const Cred = require('../model/cred');
 
@@ -21,7 +19,7 @@ const authenticateToken = async (req, res, next) => {
                 return res.status(401).send('Not authorized, user not found');
             }
 
-            next(); // Proceed to the next middleware/route handler
+            next();
         } catch (error) {
             console.error('Authentication Error:', error);
             if (error.name === 'TokenExpiredError') {
