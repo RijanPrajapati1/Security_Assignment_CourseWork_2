@@ -23,10 +23,8 @@ const processPayment = async (req, res) => {
             captchaValue // Destructure captchaValue from request body
         } = req.body;
 
-        // --- START: CRITICAL CAPTCHA Verification Step ---
         if (!RECAPTCHA_SECRET_KEY) {
-            // This 'if' block should ideally not be hit if key is hardcoded.
-            // But it's good to keep for a quick check.
+
             console.error("RECAPTCHA_SECRET_KEY is missing (even when hardcoded - critical error!)");
             return res.status(500).json({ message: "Server configuration error: CAPTCHA key missing unexpectedly." });
         }
